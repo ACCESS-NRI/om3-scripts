@@ -46,8 +46,8 @@ def polyfit_roughness(H: np.ndarray, xv: np.ndarray, yv: np.ndarray) -> float:
     """
     H1 = H.ravel()
     valid = ~np.isnan(H1)
-    # At least 6 valid points
-    if np.count_nonzero(valid) < 6:
+    # At least 4 valid points
+    if np.count_nonzero(valid) < 4:
         return np.nan
 
     X1 = xv.ravel()
@@ -105,7 +105,6 @@ def load_topo(
     Load a high-resolution bathymetry file
     """
     ds = xr.open_dataset(path, chunks={"lat": chunk_lat, "lon": chunk_lon})
-    depth = ds["z"]
     depth = ds["z"].where(ds["z"] < 0, np.nan)
     new_lon = xr.where(depth.lon >= 80, depth.lon - 360, depth.lon)
     depth = depth.assign_coords(lon=new_lon).sortby("lon")
@@ -185,7 +184,6 @@ def evaluate_roughness(
         if (j - y_start) % 3 == 0:
             print(
                 f"[Rank {rank}] Processed global row {j} (local index {j - y_start})",
-                flush=True,
             )
 
     # Collect all local data to rank 0
@@ -239,7 +237,7 @@ def main():
         "--grid-file", type=str, required=True, help="Path to the ocean static file."
     )
     parser.add_argument(
-        "--grid-mask", type=str, required=True, help="Path to the ocean mask file."
+        "--mask-file", type=str, required=True, help="Path to the ocean mask file."
     )
     parser.add_argument(
         "--output",
@@ -270,7 +268,7 @@ def main():
         topo_da = load_topo(
             args.topo_file, chunk_lat=args.chunk_lat, chunk_lon=args.chunk_lon
         )
-        ocean_mask = xr.open_dataset(args.grid_mask).mask
+        ocean_mask = xr.open_dataset(args.mask_file).mask
         xh, yh = load_model_grids(args.grid_file)
         xedges = compute_edges_from_centers(xh)
         yedges = compute_edges_from_centers(yh)
@@ -327,8 +325,8 @@ def main():
             f"--topo-file={args.topo_file}"
             f"--chunk_lat={args.chunk_lat}"
             f"--chunk_lon={args.chunk_lon}"
-            f"--grid-file={args.grid_file} "
-            f"--grid-mask={args.grid_mask} "
+            f"--grid-file={args.grid_file}"
+            f"--mask-file={args.mask_file}"
             f"--output={args.output}"
         )
 
@@ -341,7 +339,7 @@ def main():
         file_hashes = [
             f"{args.topo_file} (md5 hash: {md5sum(args.topo_file)})",
             f"{args.grid_file} (md5 hash: {md5sum(args.grid_file)})",
-            f"{args.grid_mask} (md5 hash: {md5sum(args.grid_mask)})",
+            f"{args.mask_file} (md5 hash: {md5sum(args.mask_file)})",
         ]
         global_attrs["inputFile"] = ", ".join(file_hashes)
 
