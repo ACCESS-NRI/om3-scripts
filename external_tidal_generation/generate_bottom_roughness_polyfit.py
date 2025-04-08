@@ -14,7 +14,7 @@
 # Usage:
 #    mpirun -n <ranks> python3 generate_bottom_roughness_polyfit.py \
 #         --topo-file /path/to/topog.nc \
-#         --hgrid-file /path/to/ocean_static.nc \
+#         --hgrid-file /path/to/ocean_hgrid.nc \
 #         --regrid-mask-file /path/to/ocean_mask.nc \
 #         --output output.nc
 #
@@ -177,7 +177,9 @@ def evaluate_roughness(
             lat_min = np.min(this_lat_corners)
             lat_max = np.max(this_lat_corners)
 
-            hrms_val = compute_hrms_poly_cell(lon_min, lon_max, lat_min, lat_max, topo_da)
+            hrms_val = compute_hrms_poly_cell(
+                lon_min, lon_max, lat_min, lat_max, topo_da
+            )
             local_hrms[j - y_start, i] = hrms_val
 
         if (j - y_start) % 3 == 0:
@@ -344,7 +346,7 @@ def main():
         history = get_provenance_metadata(this_file, runcmd)
 
         global_attrs = {"history": history}
-        
+
         # add md5 hashes for input files
         file_hashes = [
             f"{args.topo_file} (md5 hash: {md5sum(args.topo_file)})",
@@ -359,4 +361,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
