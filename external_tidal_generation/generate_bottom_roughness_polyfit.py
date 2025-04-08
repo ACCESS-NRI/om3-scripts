@@ -3,16 +3,20 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # =========================================================================================
-# Compute bottom roughness (h2) on an ocean model grid by fitting a
-# polynomial to high-resolution bathymetry (1/240 degree) using MPI.
-# Jayne, Steven R., and Louis C. St. Laurent. "Parameterizing tidal dissipation over rough topography." Geophysical Research Letters 28.5 (2001): 811-814.
+# Compute bottom roughness on an ocean model grid by fitting a
+# polynomial to high-resolution bathymetry (1/240 degree) using mpi.
+#
+# Reference:
+# Jayne, Steven R., and Louis C. St. Laurent.
+# "Parameterizing tidal dissipation over rough topography."
+# Geophysical Research Letters 28.5 (2001): 811-814.
 #
 # Usage:
 #    mpirun -n <ranks> python3 generate_bottom_roughness_polyfit.py \
 #         --topo-file /path/to/topog.nc \
-#         --grid-file /path/to/ocean_static.nc \
-#         --mask-file /path/to/ocean_mask.nc \
-#         --output h2.nc
+#         --hgrid-file /path/to/ocean_static.nc \
+#         --regrid-mask-file /path/to/ocean_mask.nc \
+#         --output output.nc
 #
 # Contact:
 #    - Minghang Li <Minghang.Li1@anu.edu.au>
@@ -26,9 +30,10 @@ from pathlib import Path
 import os
 import sys
 import argparse
+from mpi4py import MPI
 import numpy as np
 import xarray as xr
-from mpi4py import MPI
+
 import subprocess
 
 path_root = Path(__file__).parents[1]
@@ -42,7 +47,7 @@ def polyfit_roughness(H: np.ndarray, xv: np.ndarray, yv: np.ndarray) -> float:
     Fit a polynomial of the form:
         H(x,y) = a + b*x + c*y + d*(x*y)
     to the 2D topography array H, and compute the RMS
-    of the residuals (h2).
+    of the residuals (hrms).
     """
     H1 = H.ravel()
     valid = ~np.isnan(H1)
@@ -50,6 +55,7 @@ def polyfit_roughness(H: np.ndarray, xv: np.ndarray, yv: np.ndarray) -> float:
     if np.count_nonzero(valid) < 4:
         return np.nan
 
+    # prepare X matrix for least-squares fitting
     X1 = xv.ravel()
     Y1 = yv.ravel()
     X = np.column_stack(
@@ -66,13 +72,14 @@ def polyfit_roughness(H: np.ndarray, xv: np.ndarray, yv: np.ndarray) -> float:
             + coeffs[3] * (X1[valid] * Y1[valid])
         )
         res = Y_valid - H_fit
-        h2 = np.sqrt(np.mean(res**2))
+        hrms = np.sqrt(np.mean(res**2))
     except Exception as e:
-        h2 = np.nan
-    return h2
+        hrms = np.nan
+
+    return hrms
 
 
-def compute_h2_poly_cell(
+def compute_hrms_poly_cell(
     lon_min: float,
     lon_max: float,
     lat_min: float,
@@ -94,66 +101,42 @@ def compute_h2_poly_cell(
     x = sub_da.lon.values
     y = sub_da.lat.values
     xv, yv = np.meshgrid(x, y)
-    h2 = polyfit_roughness(H, xv, yv)
-    return h2
+    hrms = polyfit_roughness(H, xv, yv)
+    return hrms
 
 
-def load_topo(
-    path: str, chunk_lat: int = 800, chunk_lon: int = 1600
-) -> (xr.DataArray, float):
+def load_topo(path: str, chunk_lat: int = 800, chunk_lon: int = 1600) -> xr.DataArray:
     """
     Load a high-resolution bathymetry file
     """
     ds = xr.open_dataset(path, chunks={"lat": chunk_lat, "lon": chunk_lon})
     depth = ds["z"].where(ds["z"] < 0, np.nan)
-    new_lon = xr.where(depth.lon >= 80, depth.lon - 360, depth.lon)
-    depth = depth.assign_coords(lon=new_lon).sortby("lon")
     return depth
 
 
-def load_model_grids(path: str):
-    """
-    Load the ocean model grid information from a static file.
-    """
-    ds = xr.open_dataset(path)
-    xh = ds.xh
-    yh = ds.yh
-    ds.close()
-    return xh, yh
-
-
-def compute_edges_from_centers(centers: np.ndarray) -> np.ndarray:
-    """
-    Given an array of cell center coordinates, compute the
-    corresponding cell edges.
-    """
-    N = len(centers)
-    edges = np.empty(N + 1, dtype=centers.dtype)
-    edges[0] = centers[0] - 0.5 * (centers[1] - centers[0])
-    for i in range(1, N):
-        edges[i] = 0.5 * (centers[i - 1] + centers[i])
-    edges[N] = centers[N - 1] + 0.5 * (centers[N - 1] - centers[N - 2])
-    return edges
+def load_regrid_ocean_mask(path: str) -> xr.Dataset:
+    interp_ocean_mask = xr.open_dataset(path)
+    return interp_ocean_mask
 
 
 def evaluate_roughness(
     topo_da: xr.DataArray,
     ocean_mask: xr.DataArray,
-    xedges: np.ndarray,
-    yedges: np.ndarray,
-    NxCells: int,
-    NyCells: int,
+    hgrid_xc: np.ndarray,
+    hgrid_yc: np.ndarray,
+    nx: int,
+    ny: int,
     comm: MPI.Comm,
 ) -> np.ndarray:
     """
     Distribute roughness computations across all MPI ranks, and
-    gather the final 2D array of h2 values on rank 0.
+    gather the final 2D array of hrms values on rank 0.
     """
 
     rank = comm.Get_rank()
     size = comm.Get_size()
 
-    total_rows = NyCells
+    total_rows = ny
     block_size = total_rows // size
     rem = total_rows % size
 
@@ -167,27 +150,43 @@ def evaluate_roughness(
             f"Rank {rank} covers rows {y_start} to {y_end - 1}."
         )
 
-    # Initilise local h2 array
-    # local_h2 = np.zeros((y_count, NxCells), dtype=np.float32)
-    local_h2 = np.full((y_count, NxCells), np.nan, dtype=np.float32)
-    # Compute h2 for each rank
+    local_hrms = np.full((y_count, nx), np.nan, dtype=np.float32)
+
+    # Compute hrms for each rank
     for j in range(y_start, y_end):
-        for i in range(NxCells):
+        for i in range(nx):
             # Skip land cells
             if ocean_mask[j, i] == 0:
                 continue
-            h2_val = compute_h2_poly_cell(
-                xedges[i], xedges[i + 1], yedges[j], yedges[j + 1], topo_da
-            )
-            local_h2[j - y_start, i] = h2_val
+
+            this_lon_corners = [
+                hgrid_xc[j, i],
+                hgrid_xc[j, i + 1],
+                hgrid_xc[j + 1, i],
+                hgrid_xc[j + 1, i + 1],
+            ]
+            this_lat_corners = [
+                hgrid_yc[j, i],
+                hgrid_yc[j, i + 1],
+                hgrid_yc[j + 1, i],
+                hgrid_yc[j + 1, i + 1],
+            ]
+
+            lon_min = np.min(this_lon_corners)
+            lon_max = np.max(this_lon_corners)
+            lat_min = np.min(this_lat_corners)
+            lat_max = np.max(this_lat_corners)
+
+            hrms_val = compute_hrms_poly_cell(lon_min, lon_max, lat_min, lat_max, topo_da)
+            local_hrms[j - y_start, i] = hrms_val
 
         if (j - y_start) % 3 == 0:
             print(
-                f"[Rank {rank}] Processed global row {j} (local index {j - y_start})",
+                f"[Rank {rank}] Processed row {j} (local index {j - y_start})",
             )
 
     # Collect all local data to rank 0
-    local_1d = local_h2.ravel()
+    local_1d = local_hrms.ravel()
     local_size = local_1d.size
 
     # Gather sizes from all ranks
@@ -205,27 +204,26 @@ def evaluate_roughness(
 
     # On rank 0, reshape back into a 2D array
     if rank == 0:
-        final_h2 = np.full((NyCells, NxCells), np.nan, dtype=np.float32)
+        final_hrms = np.full((ny, nx), np.nan, dtype=np.float32)
         offset = 0
         for r in range(size):
             block = all_sizes[r]
             sub_data = global_1d[offset : offset + block]
             offset += block
 
-            block_rows = block // NxCells
+            block_rows = block // nx
             r_start = r * block_size + min(r, rem)
-            final_h2[r_start : r_start + block_rows, :] = sub_data.reshape(
-                block_rows, NxCells
+            final_hrms[r_start : r_start + block_rows, :] = sub_data.reshape(
+                block_rows, nx
             )
-
-        return final_h2
+        return final_hrms
     else:
         return None
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Compute bottom roughness (h2) via polynomial fit with a high-resolution topography."
+        description="Compute bottom roughness via polynomial fit with a high-resolution topography."
     )
     parser.add_argument(
         "--topo-file",
@@ -234,16 +232,28 @@ def main():
         help="Path to a high-resolution topography file.",
     )
     parser.add_argument(
-        "--grid-file", type=str, required=True, help="Path to the ocean static file."
+        "--regrid-mask-file",
+        type=str,
+        required=True,
+        help="Path to the regrid ocean mask file.",
     )
     parser.add_argument(
-        "--mask-file", type=str, required=True, help="Path to the ocean mask file."
+        "--method",
+        type=str,
+        default="conservative_normed",
+        help="Regridding method (e.g., bilinear, conservative, conservative_normed)",
+    )
+    parser.add_argument(
+        "--interpolated-field-name",
+        type=str,
+        default="hrms_interpolated",
+        help="The field name for the interpolated roughness (default: hrms_interpolated).",
     )
     parser.add_argument(
         "--output",
         type=str,
-        default="h2.nc",
-        help="Output roughness filename (default: h2.nc).",
+        default="interpolated_hrms.nc",
+        help="Output roughness filename (default: interpolated_hrms.nc).",
     )
     parser.add_argument(
         "--chunk-lat",
@@ -263,60 +273,60 @@ def main():
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
 
-    # Rank 0 loads data and initializes shared info
     if rank == 0:
         topo_da = load_topo(
             args.topo_file, chunk_lat=args.chunk_lat, chunk_lon=args.chunk_lon
         )
-        ocean_mask = xr.open_dataset(args.mask_file).mask
-        xh, yh = load_model_grids(args.grid_file)
-        xedges = compute_edges_from_centers(xh)
-        yedges = compute_edges_from_centers(yh)
-        NxCells = len(xedges) - 1
-        NyCells = len(yedges) - 1
+        regrid_ocean_mask = load_regrid_ocean_mask(args.regrid_mask_file)
+        lon_b = regrid_ocean_mask.lon_b.values
+        lat_b = regrid_ocean_mask.lat_b.values
+        ny = lon_b.shape[0] - 1
+        nx = lon_b.shape[1] - 1
+
     else:
-        # Placeholders on other ranks
         topo_da = None
-        ocean_mask = None
-        xedges = None
-        yedges = None
-        NxCells = None
-        NyCells = None
-        xh = None
-        yh = None
+        regrid_ocean_mask = None
+        lon_b = None
+        lat_b = None
+        ny = None
+        nx = None
 
+    # Broadcast shared datasets to all ranks
     topo_da = comm.bcast(topo_da, root=0)
-    ocean_mask = comm.bcast(ocean_mask, root=0)
-    NxCells = comm.bcast(NxCells, root=0)
-    NyCells = comm.bcast(NyCells, root=0)
-    xedges = comm.bcast(xedges, root=0)
-    yedges = comm.bcast(yedges, root=0)
-    xh = comm.bcast(xh, root=0)
-    yh = comm.bcast(yh, root=0)
+    regrid_ocean_mask = comm.bcast(regrid_ocean_mask, root=0)
+    lon_b = comm.bcast(lon_b, root=0)
+    lat_b = comm.bcast(lat_b, root=0)
+    nx = comm.bcast(nx, root=0)
+    ny = comm.bcast(ny, root=0)
 
-    final_h2 = evaluate_roughness(
+    final_hrms = evaluate_roughness(
         topo_da=topo_da,
-        ocean_mask=ocean_mask,
-        xedges=xedges,
-        yedges=yedges,
-        NxCells=NxCells,
-        NyCells=NyCells,
+        ocean_mask=regrid_ocean_mask[args.method],
+        hgrid_xc=lon_b,
+        hgrid_yc=lat_b,
+        nx=nx,
+        ny=ny,
         comm=comm,
     )
 
     # Rank 0 writes results to file
     if rank == 0:
-        h2_out = xr.Dataset(
-            {"h2": (("yh", "xh"), final_h2)},
+        hrms_out = xr.Dataset(
+            {
+                f"{args.interpolated_field_name}": (("y", "x"), final_hrms),
+            },
             coords={
-                "yh": yh,
-                "xh": xh,
+                "lon": (("y", "x"), regrid_ocean_mask.lon.values),
+                "lat": (("y", "x"), regrid_ocean_mask.lat.values),
+                "lon_b": (("y_b", "x_b"), regrid_ocean_mask.lon_b.values),
+                "lat_b": (("y_b", "x_b"), regrid_ocean_mask.lat_b.values),
             },
             attrs={
-                "long_name": "Polynomial-fit roughness (h2) per model cell",
+                "long_name": "Polynomial-fit roughness per interpolated grid cell",
                 "units": "m",
             },
         )
+
         # Add metadata
         this_file = os.path.normpath(__file__)
         runcmd = (
@@ -325,28 +335,28 @@ def main():
             f"--topo-file={args.topo_file}"
             f"--chunk_lat={args.chunk_lat}"
             f"--chunk_lon={args.chunk_lon}"
-            f"--grid-file={args.grid_file}"
-            f"--mask-file={args.mask_file}"
+            f"--regrid-mask-file={args.regrid_mask_file}"
+            f"--method={args.method}"
+            f"--interpolated-field-name={args.interpolated_field_name}"
             f"--output={args.output}"
         )
 
-        try:
-            history = get_provenance_metadata(this_file, runcmd)
-        except subprocess.CalledProcessError:
-            history = "Provenance metadata unavailable (not a git repo?)"
+        history = get_provenance_metadata(this_file, runcmd)
+
         global_attrs = {"history": history}
+        
         # add md5 hashes for input files
         file_hashes = [
             f"{args.topo_file} (md5 hash: {md5sum(args.topo_file)})",
-            f"{args.grid_file} (md5 hash: {md5sum(args.grid_file)})",
-            f"{args.mask_file} (md5 hash: {md5sum(args.mask_file)})",
+            f"{args.regrid_mask_file} (md5 hash: {md5sum(args.regrid_mask_file)})",
         ]
         global_attrs["inputFile"] = ", ".join(file_hashes)
 
-        h2_out.attrs.update(global_attrs)
+        hrms_out.attrs.update(global_attrs)
 
-        h2_out.to_netcdf(args.output)
+        hrms_out.to_netcdf(args.output)
 
 
 if __name__ == "__main__":
     main()
+
