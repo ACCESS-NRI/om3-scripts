@@ -66,6 +66,12 @@ def main():
         help="Path to an interpolated field, such as interpolated_h2.nc.",
     )
     parser.add_argument(
+        "--interpolated-field-name",
+        type=str,
+        default="hrms_interpolated",
+        help="The field name for the interpolated roughness (default: hrms_interpolated).",
+    )
+    parser.add_argument(
         "--method",
         type=str,
         default="conservative_normed",
@@ -109,9 +115,7 @@ def main():
     )
 
     # Apply the regridder to the interped bottom roughness
-    target_ds["h"] = regridder(interpolated_h2[args.regrid_field_name])
-
-    target_ds = target_ds["h"].drop_vars(["lon_b", "lat_b", "mask"])
+    target_ds["h"] = regridder(interpolated_h2[args.interpolated_field_name])
 
     h2 = xr.Dataset({"h2": target_ds["h"] ** 2})
 

@@ -34,8 +34,6 @@ from mpi4py import MPI
 import numpy as np
 import xarray as xr
 
-import subprocess
-
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
@@ -234,6 +232,18 @@ def main():
         help="Path to a high-resolution topography file.",
     )
     parser.add_argument(
+        "--chunk-lat",
+        type=int,
+        default=800,
+        help="Dask chunk size along lat dimension (default:800).",
+    )
+    parser.add_argument(
+        "--chunk-lon",
+        type=int,
+        default=1600,
+        help="Dask chunk size along lon dimension (default:1600).",
+    )
+    parser.add_argument(
         "--regrid-mask-file",
         type=str,
         required=True,
@@ -256,18 +266,6 @@ def main():
         type=str,
         default="interpolated_hrms.nc",
         help="Output roughness filename (default: interpolated_hrms.nc).",
-    )
-    parser.add_argument(
-        "--chunk-lat",
-        type=int,
-        default=800,
-        help="Dask chunk size along lat dimension (default:800).",
-    )
-    parser.add_argument(
-        "--chunk-lon",
-        type=int,
-        default=1600,
-        help="Dask chunk size along lon dimension (default:1600).",
     )
     args = parser.parse_args()
 
