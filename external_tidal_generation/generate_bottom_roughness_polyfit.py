@@ -40,6 +40,44 @@ sys.path.append(str(path_root))
 from scripts_common import get_provenance_metadata, md5sum
 
 
+def load_topo(path: str, chunk_lat: int = 800, chunk_lon: int = 1600) -> xr.DataArray:
+    """
+    Load a high-resolution bathymetry file
+    """
+    ds = xr.open_dataset(path, chunks={"lat": chunk_lat, "lon": chunk_lon})
+    depth = ds["z"].where(ds["z"] < 0, np.nan)
+    return depth
+
+
+def project_lon(
+    lon: float,
+) -> float:
+    """
+    Project longitude to the range [-280, 80].
+    """
+
+    return ((lon + 280) % 360) - 280
+
+
+def align_lon_coords(da: xr.DataArray) -> xr.DataArray:
+    """
+    Align high resolution topography lon coord to the range [-280, 80].
+    """
+
+    da = da.assign_coords(lon=project_lon(da.lon))
+    da = da.sortby("lon")
+
+    return da
+
+
+def load_dataset(path: str) -> xr.Dataset:
+    """
+    Load an input dataset.
+    """
+    ds = xr.open_dataset(path)
+    return ds
+
+
 def polyfit_roughness(H: np.ndarray, xv: np.ndarray, yv: np.ndarray) -> float:
     """
     Fit a polynomial of the form:
@@ -99,22 +137,16 @@ def compute_hrms_poly_cell(
     x = sub_da.lon.values
     y = sub_da.lat.values
     xv, yv = np.meshgrid(x, y)
-    hrms = polyfit_roughness(H, xv, yv)
+
+    R = 6.371229e6  # earth radius in meters
+    deg2rad = np.pi / 180
+    lat0 = np.mean(y)  # a reference lat
+    lon0 = np.mean(x)  # a reference lon
+
+    xlon = (xv - lon0) * np.cos(yv * deg2rad) * deg2rad * R
+    ylat = (yv - lat0) * deg2rad * R
+    hrms = polyfit_roughness(H, xlon, ylat)
     return hrms
-
-
-def load_topo(path: str, chunk_lat: int = 800, chunk_lon: int = 1600) -> xr.DataArray:
-    """
-    Load a high-resolution bathymetry file
-    """
-    ds = xr.open_dataset(path, chunks={"lat": chunk_lat, "lon": chunk_lon})
-    depth = ds["z"].where(ds["z"] < 0, np.nan)
-    return depth
-
-
-def load_regrid_ocean_mask(path: str) -> xr.Dataset:
-    interp_ocean_mask = xr.open_dataset(path)
-    return interp_ocean_mask
 
 
 def evaluate_roughness(
@@ -244,10 +276,13 @@ def main():
         help="Dask chunk size along lon dimension (default:1600).",
     )
     parser.add_argument(
-        "--regrid-mask-file",
+        "--mask-file",
         type=str,
         required=True,
-        help="Path to the regrid ocean mask file.",
+        help="Path to the ocean mask file.",
+    )
+    parser.add_argument(
+        "--hgrid", type=str, required=True, help="Path to ocean_hgrid.nc"
     )
     parser.add_argument(
         "--method",
@@ -256,10 +291,10 @@ def main():
         help="Regridding method (e.g., bilinear, conservative, conservative_normed)",
     )
     parser.add_argument(
-        "--interpolated-field-name",
-        type=str,
-        default="hrms_interpolated",
-        help="The field name for the interpolated roughness (default: hrms_interpolated).",
+        "--agg-factor",
+        type=int,
+        default=1,
+        help="Coare factor. Eg, 1 for original grid (eg 0.25deg); 2 for 0.5deg or 4 for 1deg resolution (default: 1 means original model grid).",
     )
     parser.add_argument(
         "--output",
@@ -274,36 +309,127 @@ def main():
     rank = comm.Get_rank()
 
     if rank == 0:
+        # Load high-resolution bathymetry
         topo_da = load_topo(
             args.topo_file, chunk_lat=args.chunk_lat, chunk_lon=args.chunk_lon
         )
-        regrid_ocean_mask = load_regrid_ocean_mask(args.regrid_mask_file)
-        lon_b = regrid_ocean_mask.lon_b.values
-        lat_b = regrid_ocean_mask.lat_b.values
-        ny = lon_b.shape[0] - 1
-        nx = lon_b.shape[1] - 1
+        ocean_mask = load_dataset(args.mask_file)
+        if "mask" not in ocean_mask:
+            raise KeyError("Missing variable 'mask' in ocean_mask file!")
+
+        # Convert lon coords to a [-280, 80] to match the range of the model grid
+        topo_da = align_lon_coords(topo_da)
+
+        # Load hgrid
+        hgrid = load_dataset(args.hgrid)
+        hgrid_x = hgrid.x[1::2, 1::2]
+        hgrid_y = hgrid.y[1::2, 1::2]
+        hgrid_xc = hgrid.x[::2, ::2]
+        hgrid_yc = hgrid.y[::2, ::2]
+
+        # Load model ocean mask and tweak coords
+        ocean_mask = ocean_mask.drop_vars(["geolon_t", "geolat_t"])
+        ocean_mask = ocean_mask.rename({"ny": "lat", "nx": "lon"})
+
+        ocean_mask = ocean_mask.assign_coords(
+            {
+                "lon": (("lat", "lon"), hgrid_x.values),
+                "lat": (("lat", "lon"), hgrid_y.values),
+                "lon_b": (("lat_b", "lon_b"), hgrid_xc.values),
+                "lat_b": (("lat_b", "lon_b"), hgrid_yc.values),
+            }
+        )
+
+        # check lon range for high resolution topo
+        print(topo_da.lon.values)
+
+        # Get the full boundary values of the ocean mask
+        lon_b_full = ocean_mask.lon_b.values
+        lat_b_full = ocean_mask.lat_b.values
+        ocean_mask_full = ocean_mask["mask"].values
+
+        # Get the dims of the full ocean mask
+        ny_full = lon_b_full.shape[0] - 1
+        nx_full = lon_b_full.shape[1] - 1
+
+        fac = args.agg_factor
+        if fac > 1:
+            # Compute number of coarse cells
+            nC_y = ny_full // fac
+            nC_x = nx_full // fac
+
+            # Crop boundaries for cell edges
+            ny_edge = nC_y * fac + 1
+            nx_edge = nC_x * fac + 1
+            lon_b_crop = lon_b_full[:ny_edge, :nx_edge]
+            lat_b_crop = lat_b_full[:ny_edge, :nx_edge]
+
+            # Coarse using striding
+            lon_b_coarse = lon_b_crop[::fac, ::fac]
+            lat_b_coarse = lat_b_crop[::fac, ::fac]
+
+            # Compute coarse cell centers by averaging the four surrounding boundaries.
+            lon_coarse = 0.25 * (
+                lon_b_coarse[:-1, :-1]
+                + lon_b_coarse[:-1, 1:]
+                + lon_b_coarse[1:, :-1]
+                + lon_b_coarse[1:, 1:]
+            )
+            lat_coarse = 0.25 * (
+                lat_b_coarse[:-1, :-1]
+                + lat_b_coarse[:-1, 1:]
+                + lat_b_coarse[1:, :-1]
+                + lat_b_coarse[1:, 1:]
+            )
+
+            # Crop ocean_mask at cell center
+            ny_crop = (ny_full // fac) * fac
+            nx_crop = (nx_full // fac) * fac
+            ocean_mask_cropped = ocean_mask_full[:ny_crop, :nx_crop]
+            # ocean_mask_coarse = ocean_mask_cropped.reshape(ny_crop // fac, fac,nx_crop // fac, fac).max(axis=(1, 3))
+            ocean_mask_coarse = ocean_mask_cropped[::fac, ::fac]
+
+            # Update dimensions
+            ny = ocean_mask_coarse.shape[0]
+            nx = ocean_mask_coarse.shape[1]
+
+        else:
+            # No coarsen needed
+            lon_b_coarse = lon_b_full
+            lat_b_coarse = lat_b_full
+            ocean_mask_coarse = ocean_mask_full
+            ny = ny_full
+            nx = nx_full
+
+            lon_coarse = ocean_mask.lon.values
+            lat_coarse = ocean_mask.lat.values
+
+        print(f"[Rank 0] coarsen grid dimensions: {ny} cells in y, {nx} cells in x.")
 
     else:
         topo_da = None
-        regrid_ocean_mask = None
-        lon_b = None
-        lat_b = None
+        lon_b_coarse = None
+        lat_b_coarse = None
+        ocean_mask_coarse = None
+        lon_coarse = None
+        lat_coarse = None
         ny = None
         nx = None
 
-    # Broadcast shared datasets to all ranks
+    # Broadcast fields and grid sizes to all ranks.
     topo_da = comm.bcast(topo_da, root=0)
-    regrid_ocean_mask = comm.bcast(regrid_ocean_mask, root=0)
-    lon_b = comm.bcast(lon_b, root=0)
-    lat_b = comm.bcast(lat_b, root=0)
-    nx = comm.bcast(nx, root=0)
+    lon_b_coarse = comm.bcast(lon_b_coarse, root=0)
+    lat_b_coarse = comm.bcast(lat_b_coarse, root=0)
+    ocean_mask_coarse = comm.bcast(ocean_mask_coarse, root=0)
     ny = comm.bcast(ny, root=0)
+    nx = comm.bcast(nx, root=0)
 
+    # Evaluate HRMS on the grid.
     final_hrms = evaluate_roughness(
         topo_da=topo_da,
-        ocean_mask=regrid_ocean_mask[args.method],
-        hgrid_xc=lon_b,
-        hgrid_yc=lat_b,
+        ocean_mask=ocean_mask_coarse,
+        hgrid_xc=lon_b_coarse,
+        hgrid_yc=lat_b_coarse,
         nx=nx,
         ny=ny,
         comm=comm,
@@ -311,50 +437,54 @@ def main():
 
     # Rank 0 writes results to file
     if rank == 0:
-        hrms_out = xr.Dataset(
-            {
-                f"{args.interpolated_field_name}": (("y", "x"), final_hrms),
-            },
-            coords={
-                "lon": (("y", "x"), regrid_ocean_mask.lon.values),
-                "lat": (("y", "x"), regrid_ocean_mask.lat.values),
-                "lon_b": (("y_b", "x_b"), regrid_ocean_mask.lon_b.values),
-                "lat_b": (("y_b", "x_b"), regrid_ocean_mask.lat_b.values),
-            },
-            attrs={
-                "long_name": "Polynomial-fit roughness per interpolated grid cell",
-                "units": "m",
-            },
-        )
+        if args.agg_factor == 1:
+            # No regridding and no coarsen,
+            # hence output results on the original model grid
+            h2_out = xr.Dataset(
+                {
+                    "h2": (("y", "x"), final_hrms**2),
+                },
+                coords={
+                    "lon": (("y", "x"), lon_coarse),
+                    "lat": (("y", "x"), lat_coarse),
+                    "lon_b": (("y_b", "x_b"), lon_b_coarse),
+                    "lat_b": (("y_b", "x_b"), lat_b_coarse),
+                },
+                attrs={
+                    "long_name": (
+                        "Polynomial-fit roughness square h^2 per model grid cell "
+                        "following Jayne & Laurent (2001)"
+                    ),
+                    "units": "m",
+                },
+            )
+            h2_out["h2_0"] = h2_out["h2"].fillna(0.0)
 
-        # Add metadata
+        # Add provenance metadata and MD5 hashes for input files.
         this_file = os.path.normpath(__file__)
         runcmd = (
-            f"mpirun -n $PBS_NCPUS"
-            f"python3 {os.path.basename(this_file)} "
-            f"--topo-file={args.topo_file}"
-            f"--chunk_lat={args.chunk_lat}"
-            f"--chunk_lon={args.chunk_lon}"
-            f"--regrid-mask-file={args.regrid_mask_file}"
-            f"--method={args.method}"
-            f"--interpolated-field-name={args.interpolated_field_name}"
+            f"mpirun -n $PBS_NCPUS python3 {os.path.basename(this_file)} "
+            f"--topo-file={args.topo_file} "
+            f"--hgrid={args.hgrid} "
+            f"--chunk-lat={args.chunk_lat} "
+            f"--chunk-lon={args.chunk_lon} "
+            f"--mask-file={args.mask_file} "
+            f"--agg-factor={args.agg_factor} "
             f"--output={args.output}"
         )
 
         history = get_provenance_metadata(this_file, runcmd)
-
         global_attrs = {"history": history}
-
-        # add md5 hashes for input files
         file_hashes = [
             f"{args.topo_file} (md5 hash: {md5sum(args.topo_file)})",
-            f"{args.regrid_mask_file} (md5 hash: {md5sum(args.regrid_mask_file)})",
+            f"{args.hgrid} (md5 hash: {md5sum(args.hgrid)})",
+            f"{args.mask_file} (md5 hash: {md5sum(args.mask_file)})",
         ]
         global_attrs["inputFile"] = ", ".join(file_hashes)
+        h2_out.attrs.update(global_attrs)
 
-        hrms_out.attrs.update(global_attrs)
-
-        hrms_out.to_netcdf(args.output)
+        h2_out.to_netcdf(args.output)
+        print(f"[Rank 0] HRMS output written to: {args.output}")
 
 
 if __name__ == "__main__":
