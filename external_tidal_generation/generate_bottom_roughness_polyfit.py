@@ -294,7 +294,7 @@ def main():
         "--agg-factor",
         type=int,
         default=1,
-        help="Coare factor. Eg, 1 for original grid (eg 0.25deg); 2 for 0.5deg or 4 for 1deg resolution (default: 1 means original model grid).",
+        help="Coarse factor. Eg, 1 for original grid (eg 0.25deg); 2 for 0.5deg or 4 for 1deg resolution (default: 1 means original model grid).",
     )
     parser.add_argument(
         "--output",
