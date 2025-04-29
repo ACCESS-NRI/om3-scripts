@@ -250,14 +250,14 @@ def main():
 
     # add md5 hashes for input files
     file_hashes = [
-        f"{args.target_grid} (md5 hash: {md5sum(args.hgrid)})",
+        f"{args.hgrid} (md5 hash: {md5sum(args.hgrid)})",
         f"{args.mask} (md5 hash: {md5sum(args.mask)})",
     ]
     global_attrs["inputFile"] = ", ".join(file_hashes)
     tideamp.attrs.update(global_attrs)
 
-    tideamp.to_netcdf(args.out)
-    print(f"Complete {args.out}!")
+    tideamp.to_netcdf(args.output)
+    print(f"Complete {args.output}!")
 
 
 if __name__ == "__main__":
