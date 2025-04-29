@@ -118,7 +118,7 @@ def main():
     target_ds["h"] = regridder(interpolated_h2[args.interpolated_field_name])
 
     h2 = xr.Dataset({"h2": target_ds["h"] ** 2})
-    h2['h2_0'] = h2['h2'].fillna(0.)
+    h2["h2_0"] = h2["h2"].fillna(0.0)
 
     h2.attrs["description"] = (
         "Squared bottom roughness amplitude computed using a polynomial fitting method "
