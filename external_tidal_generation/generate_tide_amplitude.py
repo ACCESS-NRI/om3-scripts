@@ -6,10 +6,15 @@
 # Compute the barotropic tidal amplitude from TPXO10-atlas v2
 # using eight primary constituents (M2, S2, N2, K2, K1, O1, P1 and Q1)
 #
+# Reference:
+# Adcroft, Alistair, et al.
+# "The GFDL Global Ocean and Sea Ice Model OM4.0: Model Description and Simulation Features"
+# Journal of Advances in Modeling Earth Systems 11.10 (2019): 3167-3211.
+#
 # Usage:
 #    python3 generate_tide_amplitude.py \
-#       --hgrid /path/to/ocean_hgrid.nc \
-#       --mask /path/to/ocean_mask.nc \
+#       --hgrid-file /path/to/ocean_hgrid.nc \
+#       --mask-file /path/to/ocean_mask.nc \
 #       --data-path /path/to/TPXO10/ \
 #       --method  conservative_normed \
 #       --output  tideamp.nc
@@ -201,13 +206,13 @@ def main():
         description="Compute tidal amplitude from TPXO10-atlas v2 and regrid onto a model grid."
     )
     parser.add_argument(
-        "--hgrid", type=str, required=True, help="Path to ocean mosaic ocean_hgrid.nc."
+        "--hgrid-file", type=str, required=True, help="Path to ocean_hgrid.nc"
     )
     parser.add_argument(
-        "--mask",
+        "--mask-file",
         type=str,
         required=True,
-        help="Path to ocean_mask.nc.",
+        help="Path to the ocean mask file.",
     )
     parser.add_argument(
         "--method",
@@ -225,21 +230,25 @@ def main():
         "--output",
         type=str,
         required=True,
-        help="Output netcdf file name.",
+        help="Output tideamp file.",
     )
 
     args = parser.parse_args()
 
+    # Compute tide amplitude on the TPXO10 grid
     tideamp_tmp = compute_tideamp(Path(args.data_path))
 
-    tideamp = regrid(Path(args.hgrid), Path(args.mask), tideamp_tmp, args.method)
+    # Regrid tide amplitude onto the model grid
+    tideamp = regrid(
+        Path(args.hgrid_file), Path(args.mask_file), tideamp_tmp, args.method
+    )
 
     # Add provenance metadata and MD5 hashes for input files.
     this_file = os.path.normpath(__file__)
     runcmd = (
         f"python3 {os.path.basename(this_file)} "
-        f"--hgrid={args.hgrid} "
-        f"--mask={args.mask} "
+        f"--hgrid-file={args.hgrid_file} "
+        f"--mask-file={args.mask_file} "
         f"--method={args.method} "
         f"--data-path={args.data_path} "
         f"--output={args.output} "
@@ -250,8 +259,8 @@ def main():
 
     # add md5 hashes for input files
     file_hashes = [
-        f"{args.hgrid} (md5 hash: {md5sum(args.hgrid)})",
-        f"{args.mask} (md5 hash: {md5sum(args.mask)})",
+        f"{args.hgrid_file} (md5 hash: {md5sum(args.hgrid_file)})",
+        f"{args.mask_file} (md5 hash: {md5sum(args.mask_file)})",
     ]
     global_attrs["inputFile"] = ", ".join(file_hashes)
     tideamp.attrs.update(global_attrs)
