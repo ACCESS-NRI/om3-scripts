@@ -19,7 +19,8 @@ python fix_cpl_restart.py --input_file /path/to/access-om3.cpl.r.*.nc --mask_fil
 
 def unmask_2d(var, mask, missing_value):
     if mask is None:
-        assert missing_value is not None
+        if missing_value is None:
+            raise ValueError("missing_value must be provided when mask is None.")
         mask = np.zeros_like(var.data)
         mask[np.where(var.data == missing_value)] = 1
 
