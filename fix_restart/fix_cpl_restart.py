@@ -61,18 +61,6 @@ def unmask_file(filename, mask=None, missing_value=None, skip_vars=[]):
                 print(f"WARNING: not unmasking {v} because it is 1D")
             f.variables[v][:] = var[:]
 
-        # Add metadata
-        f.setncattr(
-            "title",
-            "Coupler restart fields updated with land mask of modified bathymetry",
-        )
-        f.setncattr("history", f"Updated on {datetime.now().strftime('%Y-%m-%d')}")
-        f.setncattr("source", "fix_cpl_restart.py")
-        f.setncattr("run_command", " ".join(sys.argv))
-
-    return 0
-
-
 def apply_mask_2d(v, landmask, mask_val):
     v[np.where(landmask)] = mask_val
 
@@ -104,7 +92,15 @@ def apply_mask_file(filename, mask, mask_val=0.0, skip_vars=[]):
             else:
                 print(f"WARNING: not applying mask {v} because it is 1D")
             f.variables[v][:] = var[:]
-    return 0
+        
+        # Add metadata
+        f.setncattr(
+            "title",
+            "Coupler restart fields updated with land mask of modified bathymetry",
+        )
+        f.setncattr("history", f"Updated on {datetime.now().strftime('%Y-%m-%d')}")
+        f.setncattr("source", "fix_cpl_restart.py")
+        f.setncattr("run_command", " ".join(sys.argv))
 
 
 def main():
