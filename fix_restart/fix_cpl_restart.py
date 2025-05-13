@@ -10,10 +10,15 @@ from scipy import ndimage as nd
 from datetime import datetime
 
 """
-This script updates coupler restart files by unmasking the restart and then applying a updated land masks.
+This script updates ACCESS-OM3 coupler restart files by infilling missing (masked) values
+based on the surrounding ocean cells and reapplying a land mask using a provided mask file
+(e.g., kmt.nc).
+
+Note: This process only modifies the **surface-level cells** (i.e., the topmost levels) 
+and does not fill vertical profiles for newly wet columns introduced by bathymetry changes.
 
 Example usage:
-python fix_cpl_restart.py --input_file /path/to/access-om3.cpl.r.*.nc --mask_file /path/to/kmt.nc --mask_var kmt
+python fix_cpl_restart.py --input_file /path/to/access-om3.cpl.r.0000-01-01-00000.nc --mask_file /path/to/kmt.nc --mask_var kmt
 """
 
 
@@ -24,6 +29,7 @@ def unmask_2d(var, mask, missing_value):
         mask = np.zeros_like(var.data)
         mask[np.where(var.data == missing_value)] = 1
 
+    # Find indices of the nearest valid (unmasked) points for each grid cell
     ind = nd.distance_transform_edt(
         mask[:, :], return_distances=False, return_indices=True
     )
@@ -61,6 +67,7 @@ def unmask_file(filename, mask=None, missing_value=None, skip_vars=[]):
                 print(f"WARNING: not unmasking {v} because it is 1D")
             f.variables[v][:] = var[:]
 
+
 def apply_mask_2d(v, landmask, mask_val):
     v[np.where(landmask)] = mask_val
 
@@ -92,7 +99,7 @@ def apply_mask_file(filename, mask, mask_val=0.0, skip_vars=[]):
             else:
                 print(f"WARNING: not applying mask {v} because it is 1D")
             f.variables[v][:] = var[:]
-        
+
         # Add metadata
         f.setncattr(
             "title",
@@ -124,7 +131,7 @@ def main():
     )
     args = parser.parse_args()
 
-    #all atmosphere variables plus the list below are skipped 
+    # all atmosphere variables plus the list below are skipped
     skip_vars = [
         "time",
         "time_bnds",
