@@ -8,6 +8,12 @@ import numpy as np
 import netCDF4 as nc
 from scipy import ndimage as nd
 from datetime import datetime
+from pathlib import Path
+
+path_root = Path(__file__).parents[1]
+sys.path.append(str(path_root))
+
+from scripts_common import get_provenance_metadata, md5sum
 
 """
 This script updates ACCESS-OM3 coupler restart files by infilling missing (masked) values
@@ -82,7 +88,7 @@ def apply_mask_4d(v, landmask, mask_val):
         apply_mask_3d(v[t, :], landmask, mask_val)
 
 
-def apply_mask_file(filename, mask, mask_val=0.0, skip_vars=[]):
+def apply_mask_file(filename, mask, mask_file, mask_val=0.0, skip_vars=[]):
     with nc.Dataset(filename, "r+") as f:
         for v in f.variables:
             if v in skip_vars or v.startswith("atm"):
@@ -100,15 +106,16 @@ def apply_mask_file(filename, mask, mask_val=0.0, skip_vars=[]):
                 print(f"WARNING: not applying mask {v} because it is 1D")
             f.variables[v][:] = var[:]
 
+        this_file = os.path.normpath(__file__)
+        runcmd = (f"python3 {os.path.basename(this_file)} --input_file {filename} --mask_file {mask_file}")
+        
         # Add metadata
         f.setncattr(
             "title",
             "Coupler restart fields updated with land mask of modified bathymetry",
         )
-        f.setncattr("history", f"Updated on {datetime.now().strftime('%Y-%m-%d')}")
-        f.setncattr("source", "fix_cpl_restart.py")
-        f.setncattr("run_command", " ".join(sys.argv))
-
+        f.setncattr("history", get_provenance_metadata(this_file, runcmd))
+        f.setncattr("run_command", runcmd)
 
 def main():
     parser = argparse.ArgumentParser(
@@ -149,7 +156,7 @@ def main():
         mask = ~mask  # dry = True
 
     unmask_file(args.input_file, mask, missing_value, skip_vars=skip_vars)
-    apply_mask_file(args.input_file, mask, mask_val=0.0, skip_vars=skip_vars)
+    apply_mask_file(args.input_file, mask, args.mask_file,mask_val=0.0, skip_vars=skip_vars)
 
 
 if __name__ == "__main__":
