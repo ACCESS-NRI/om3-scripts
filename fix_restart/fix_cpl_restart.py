@@ -107,8 +107,8 @@ def apply_mask_file(filename, mask, mask_file, mask_val=0.0, skip_vars=[]):
             f.variables[v][:] = var[:]
 
         this_file = os.path.normpath(__file__)
-        runcmd = (f"python3 {os.path.basename(this_file)} --input_file {filename} --mask_file {mask_file}")
-        
+        runcmd = f"python3 {os.path.basename(this_file)} --input_file {filename} --mask_file {mask_file}"
+
         # Add metadata
         f.setncattr(
             "title",
@@ -116,6 +116,7 @@ def apply_mask_file(filename, mask, mask_file, mask_val=0.0, skip_vars=[]):
         )
         f.setncattr("history", get_provenance_metadata(this_file, runcmd))
         f.setncattr("run_command", runcmd)
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -156,7 +157,9 @@ def main():
         mask = ~mask  # dry = True
 
     unmask_file(args.input_file, mask, missing_value, skip_vars=skip_vars)
-    apply_mask_file(args.input_file, mask, args.mask_file,mask_val=0.0, skip_vars=skip_vars)
+    apply_mask_file(
+        args.input_file, mask, args.mask_file, mask_val=0.0, skip_vars=skip_vars
+    )
 
 
 if __name__ == "__main__":
