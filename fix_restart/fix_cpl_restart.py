@@ -124,6 +124,7 @@ def main():
     )
     args = parser.parse_args()
 
+    #all atmosphere variables plus the list below are skipped 
     skip_vars = [
         "time",
         "time_bnds",
