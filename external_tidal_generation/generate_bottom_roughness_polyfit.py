@@ -16,6 +16,8 @@
 #         --topo-file /path/to/topog.nc \
 #         --hgrid-file /path/to/ocean_hgrid.nc \
 #         --mask-file /path/to/ocean_mask.nc \
+#         --chunk-lat chunk_lat
+#         --chunk-lon chunk_lon
 #         --output output.nc
 #
 # Contact:
