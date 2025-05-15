@@ -5,7 +5,7 @@
 # =========================================================================================
 # Compute bottom roughness on an ocean model grid by fitting a
 # polynomial to high-resolution bathymetry (1/240 degree) using mpi.
-#
+# NB: The output nc file contains the squared bottom roughness values, as these are used directly in the source.
 # Reference:
 # Jayne, Steven R., and Louis C. St. Laurent.
 # "Parameterizing tidal dissipation over rough topography."
