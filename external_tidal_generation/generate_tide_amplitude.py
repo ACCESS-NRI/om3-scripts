@@ -201,6 +201,35 @@ def regrid(
     return target_ds
 
 
+def update_tideamp(tideamp: xr.DataArray) -> xr.DataArray:
+    """
+    Drop boundary-coordinate variables (lon_b, lat_b) and mask,
+    Apply CF-compliant metadata to tideamp.
+    """
+    tideamp = tideamp.drop_vars(["lon_b", "lat_b", "mask"])
+
+    tideamp_attrs = {
+        "lon": {
+            "long_name": "Longitude",
+            "units": "degrees_east",
+        },
+        "lat": {
+            "long_name": "Latitude",
+            "units": "degrees_north",
+        },
+        "tideamp": {
+            "long_name": "Tidal velocity amplitude",
+            "units": "m/s",
+            "regrid_method": "conservative_normed",
+        },
+    }
+
+    for var, attrs in tideamp_attrs.items():
+        tideamp[var].attrs.update(attrs)
+
+    return tideamp
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Compute tidal amplitude from TPXO10-atlas v2 and regrid onto a model grid."
@@ -242,6 +271,9 @@ def main():
     tideamp = regrid(
         Path(args.hgrid_file), Path(args.mask_file), tideamp_tmp, args.method
     )
+
+    # Remove boundary variables and update metadata to tideamp
+    tideamp = update_tideamp(tideamp)
 
     # Add provenance metadata and MD5 hashes for input files.
     this_file = os.path.normpath(__file__)
