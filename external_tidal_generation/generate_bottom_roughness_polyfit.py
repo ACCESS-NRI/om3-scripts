@@ -366,7 +366,7 @@ def main():
                     "Polynomial-fit roughness square h^2 per model grid cell "
                     "following Jayne & Laurent (2001)"
                 ),
-                "units": "m",
+                "units": "m^2",
             },
         )
 
