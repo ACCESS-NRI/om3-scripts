@@ -357,18 +357,33 @@ def main():
     if rank == 0:
         h2_out = xr.Dataset(
             {
-                "h2": (("lat", "lon"), np.nan_to_num(final_hrms**2, nan=0.0)),
-            },
-            coords={
-                "lon": (("lat", "lon"), lon),
-                "lat": (("lat", "lon"), lat),
-            },
-            attrs={
-                "long_name": (
-                    "Polynomial-fit roughness square h^2 per model grid cell "
-                    "following Jayne & Laurent (2001)"
+                "h2": xr.DataArray(
+                    np.nan_to_num(final_hrms**2, nan=0.0),
+                    dims=("y", "x"),
+                    attrs={
+                        "long_name": (
+                            "Polynomial-fit bottom roughness squared (h^2) per model grid cell "
+                            "following Jayne & Laurent (2001)"
+                        ),
+                        "units": "m^2",
+                    },
                 ),
-                "units": "m^2",
+                "lon": xr.DataArray(
+                    lon,
+                    dims=("y", "x"),
+                    attrs={
+                        "long_name": "Longitude",
+                        "units": "degrees_east",
+                    },
+                ),
+                "lat": xr.DataArray(
+                    lat,
+                    dims=("y", "x"),
+                    attrs={
+                        "long_name": "Latitude",
+                        "units": "degrees_north",
+                    },
+                ),
             },
         )
 
