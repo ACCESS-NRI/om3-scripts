@@ -88,6 +88,7 @@ def main():
     )
     parser.add_argument(
         "output_dir",
+        required=True,
         help="Name of the output directory which will contain new restarts.",
     )
     parser.add_argument(
