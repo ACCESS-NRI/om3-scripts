@@ -101,6 +101,7 @@ def main():
     )
     parser.add_argument(
         "old_prefix",
+        required=True,
         help="File name prefix of old restart files from the run using the old bathymetry. "
         "For example, if the file name is 'access-om3.mom6.r.1900-01-01-00000_1.nc', "
         "then the prefix is 'access-om3.mom6.r.1900-01-01-00000'.",
