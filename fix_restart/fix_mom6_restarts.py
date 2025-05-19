@@ -91,6 +91,7 @@ def main():
     )
     parser.add_argument(
         "template_prefix",
+        requried=True,
         help="File name prefix of template restart files from the run using the new bathymetry "
         "(typically a short run from rest). For example, if the file name is "
         "'access-om3.mom6.r.1900-01-01-00000_1.nc', then the prefix is "
