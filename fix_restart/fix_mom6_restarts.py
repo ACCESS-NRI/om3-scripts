@@ -107,7 +107,7 @@ def main():
         "then the prefix is 'access-om3.mom6.r.1900-01-01-00000'.",
     )
 
-    parser.add_argument("--nprocs", default=1, type=int, help="Parallel processes")
+    parser.add_argument("--nprocs", default=4, type=int, help="Parallel processes")
     args = parser.parse_args()
 
     template_files = sorted(
