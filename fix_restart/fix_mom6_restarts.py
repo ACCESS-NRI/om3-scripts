@@ -83,6 +83,7 @@ def main():
     )
     parser.add_argument(
         "old_dir",
+        required=True
         help="Name of directory containing collated restart files from a run using the old bathymetry.",
     )
     parser.add_argument(
