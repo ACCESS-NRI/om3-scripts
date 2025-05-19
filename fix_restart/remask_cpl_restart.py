@@ -40,7 +40,6 @@ def unmask_2d(var, mask, missing_value):
         mask[:, :], return_distances=False, return_indices=True
     )
     var[:, :] = var[tuple(ind)]
-    print("2d done", flush=True)
 
 
 def unmask_3d(v, mask, missing_value):
@@ -53,25 +52,23 @@ def unmask_4d(v, mask, missing_value):
         unmask_3d(v[t, :], mask, missing_value)
 
 
-def unmask_file(filename, mask=None, missing_value=None, skip_vars=[]):
-    with nc.Dataset(filename, "r+") as f:
-        for v in f.variables:
-            if v in skip_vars or v.startswith("atm"):
-                continue
-            print(f"Unmasking variable: {v}")
-            var = f.variables[v][:]
-            if mask is None and missing_value is None:
-                missing_value = var.fill_value
+def unmask_file(ncfile, mask=None, missing_value=None, skip_vars=[]):
+    for v in ncfile.variables:
+        if v in skip_vars or v.startswith("atm"):
+            continue
+        var = ncfile.variables[v][:]
+        if mask is None and missing_value is None:
+            missing_value = var.fill_value
 
-            if len(var.shape) == 4:
-                unmask_4d(var, mask, missing_value)
-            elif len(var.shape) == 3:
-                unmask_3d(var, mask, missing_value)
-            elif len(var.shape) == 2:
-                unmask_2d(var, mask, missing_value)
-            else:
-                print(f"WARNING: not unmasking {v} because it is 1D")
-            f.variables[v][:] = var[:]
+        if len(var.shape) == 4:
+            unmask_4d(var, mask, missing_value)
+        elif len(var.shape) == 3:
+            unmask_3d(var, mask, missing_value)
+        elif len(var.shape) == 2:
+            unmask_2d(var, mask, missing_value)
+        else:
+            print(f"WARNING: not unmasking {v} because it is 1D")
+        ncfile.variables[v][:] = var[:]
 
 
 def apply_mask_2d(v, landmask, mask_val):
@@ -88,34 +85,22 @@ def apply_mask_4d(v, landmask, mask_val):
         apply_mask_3d(v[t, :], landmask, mask_val)
 
 
-def apply_mask_file(filename, mask, mask_file, mask_val=0.0, skip_vars=[]):
-    with nc.Dataset(filename, "r+") as f:
-        for v in f.variables:
-            if v in skip_vars or v.startswith("atm"):
-                continue
+def apply_mask_file(ncfile, mask, mask_val=0.0, skip_vars=[]):
+    for v in ncfile.variables:
+        if v in skip_vars or v.startswith("atm"):
+            continue
 
-            var = f.variables[v][:]
+        var = ncfile.variables[v][:]
 
-            if len(var.shape) == 4:
-                apply_mask_4d(var, mask, mask_val)
-            elif len(var.shape) == 3:
-                apply_mask_3d(var, mask, mask_val)
-            elif len(var.shape) == 2:
-                apply_mask_2d(var, mask, mask_val)
-            else:
-                print(f"WARNING: not applying mask {v} because it is 1D")
-            f.variables[v][:] = var[:]
-
-        this_file = os.path.normpath(__file__)
-        runcmd = f"python3 {os.path.basename(this_file)} --input_file {filename} --mask_file {mask_file}"
-
-        # Add metadata
-        f.setncattr(
-            "title",
-            "Coupler restart fields updated with land mask of modified bathymetry",
-        )
-        f.setncattr("history", get_provenance_metadata(this_file, runcmd))
-        f.setncattr("run_command", runcmd)
+        if len(var.shape) == 4:
+            apply_mask_4d(var, mask, mask_val)
+        elif len(var.shape) == 3:
+            apply_mask_3d(var, mask, mask_val)
+        elif len(var.shape) == 2:
+            apply_mask_2d(var, mask, mask_val)
+        else:
+            print(f"WARNING: not applying mask {v} because it is 1D")
+        ncfile.variables[v][:] = var[:]
 
 
 def main():
@@ -156,10 +141,28 @@ def main():
         mask = np.array(f.variables[args.mask_var][:], dtype=bool)
         mask = ~mask  # dry = True
 
-    unmask_file(args.input_file, mask, missing_value, skip_vars=skip_vars)
-    apply_mask_file(
-        args.input_file, mask, args.mask_file, mask_val=0.0, skip_vars=skip_vars
-    )
+    with nc.Dataset(args.input_file, "r+") as f:
+
+        unmask_file(f, mask, missing_value, skip_vars=skip_vars)
+        apply_mask_file(f, mask, skip_vars=skip_vars)
+
+        this_file = os.path.normpath(__file__)
+        runcmd = f"python3 {os.path.basename(this_file)} --input_file {args.input_file} --mask_file {args.mask_file} --mask_var {args.mask_var}"
+
+        # Add metadata
+        f.setncattr(
+            "title",
+            "Coupler restart fields updated with land mask of modified bathymetry",
+        )
+        f.setncattr("history", get_provenance_metadata(this_file, runcmd))
+        f.setncattr(
+            "mask_file",
+            f"{os.path.abspath(args.mask_file)} (md5 hash: {md5sum(args.mask_file)})",
+        )
+        f.setncattr(
+            "input_file",
+            f"{os.path.abspath(args.input_file)} (md5 hash: {md5sum(args.input_file)})",
+        )
 
 
 if __name__ == "__main__":
