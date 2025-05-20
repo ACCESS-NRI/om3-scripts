@@ -32,7 +32,7 @@ Step before running this script:
 2. Run this script to patch the new restarts using valid data from the old restarts.
 
 Usage:
-    python3 fix_mom6_restarts.py --template_dir <template_dir> --old_dir <old_dir> --output_dir <output_dir> --template_prefix <template_prefix> --old_prefix <old_prefix> --nprocs <number_of_processes>
+    python3 apply_bathy_mom_restarts.py --template_dir <template_dir> --old_dir <old_dir> --output_dir <output_dir> --template_prefix <template_prefix> --old_prefix <old_prefix> --nprocs <number_of_processes>
 
 Where:
     - template_dir is the directory containing restart files from a short run using the new bathymetry.

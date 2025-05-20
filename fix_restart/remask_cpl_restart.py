@@ -23,7 +23,7 @@ Note: This process only modifies the **surface-level cells** (i.e., the topmost 
 and does not fill vertical profiles for newly wet columns introduced by bathymetry changes.
 
 Example usage:
-python fix_cpl_restart.py --input_file /path/to/access-om3.cpl.r.0000-01-01-00000.nc --mask_file /path/to/kmt.nc --mask_var kmt
+python remask_cpl_restart.py --input_file /path/to/access-om3.cpl.r.0000-01-01-00000.nc --mask_file /path/to/kmt.nc --mask_var kmt
 """
 
 
