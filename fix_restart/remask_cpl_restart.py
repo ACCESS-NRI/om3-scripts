@@ -7,7 +7,6 @@ import argparse
 import numpy as np
 import netCDF4 as nc
 from scipy import ndimage as nd
-from datetime import datetime
 from pathlib import Path
 
 path_root = Path(__file__).parents[1]
