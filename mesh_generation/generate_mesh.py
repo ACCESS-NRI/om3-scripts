@@ -6,8 +6,9 @@
 #
 # To run:
 #   python generate_mesh.py --grid-type=<grid-type> --grid-filename=<grid-file> \
-#     --mask-filename=<mask-file> --mesh-filename=<output-file> --lon-name=<lon-name> \
-#     --lat-name=<lat-name> --area-name=<area-name> --wrap-lons
+#     --mask-filename=<mask-file> --mesh-filename=<output-file> --wrap-lons
+# these extra arguments are available if the script can't figure out the names automatically:
+#     --lon-name=<lon-name> --lat-name=<lat-name> --area-name=<area-name>
 #
 # This script currently supports two grid-types:
 #   - "mom" to generate a mesh representation of h-cells from a MOM supergrid
@@ -37,6 +38,7 @@ import pandas as pd
 
 from pathlib import Path
 import sys
+import warnings
 
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
@@ -320,10 +322,7 @@ class LatLonGrid(BaseGrid):
         else:
             mask = None
 
-        if area_name in grid:
-            area = _get_area(grid, area_name)
-        else:
-            area = None
+        area = _maybe_get_area(grid, area_name)
 
         x_centres = longitude
         y_centres = latitude
@@ -413,9 +412,9 @@ def _get_latitude(ds, lon_name):
     return latitude.values, latitude_bounds.values
 
 
-def _get_area(ds, area_name):
+def _maybe_get_area(ds, area_name):
     """
-    Return the area variable
+    Return the area variable if it can be found
     """
     if area_name:
         return ds[area_name]
@@ -423,9 +422,11 @@ def _get_area(ds, area_name):
         try:
             return ds.cf["area"]
         except KeyError:
-            raise KeyError(
-                "Cannot automatically determine the name of the area variable. Please pass --area-name"
+            warnings.warn(
+                "Cannot automatically determine the name of the area variable. If area is available in the "
+                "input grid file and it needs to be included in the mesh, please pass --area-name"
             )
+            return None
 
 
 gridtype_dispatch = {
