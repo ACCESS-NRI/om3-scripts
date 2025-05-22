@@ -87,8 +87,17 @@ def main():
         "zoo": (0.01e-6, "mol kg-1"),
         "det": (0.01e-6, "mol kg-1"),
         "caco3": (0.01e-6, "mol kg-1"),
+        "pchl": (0.02e-8, "mol kg-1"),
+        "phyfe": (0.01e-11, "mol kg-1"),
+        "zoofe": (0.01e-11, "mol kg-1"),
+        "detfe": (0.01e-11, "mol kg-1"),
+        "dicp": (0.0, "mol kg-1"),
+        "dicr": (0.0, "mol kg-1"),
         "det_sediment": (0.0, "mol m-2"),
         "caco3_sediment": (0.0, "mol m-2"),
+        "detfe_sediment": (0.0, "mol m-2"),
+        "detbury": (0.0, "mol m-2 s-1"),
+        "caco3bury": (0.0, "mol m-2 s-1"),
     }
 
     xr.set_options(keep_attrs=True)
