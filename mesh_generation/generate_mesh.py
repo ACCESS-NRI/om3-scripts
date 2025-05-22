@@ -5,10 +5,11 @@
 # Generate an ESMF mesh file from an input grid.
 #
 # To run:
-#   python generate_mesh.py --grid_type=<gridtype> --grid_filename=<grid_file> \
-#     --mask_filename=<mask_file> --mesh_filename=<output_file>
+#   python generate_mesh.py --grid-type=<grid-type> --grid-filename=<grid-file> \
+#     --mask-filename=<mask-file> --mesh-filename=<output-file> --lon-name=<lon-name> \
+#     --lat-name=<lat-name> --area-name=<area-name> --wrap-lons
 #
-# This script currently supports two grid_types:
+# This script currently supports two grid-types:
 #   - "mom" to generate a mesh representation of h-cells from a MOM supergrid
 #   - "latlon" to generate a mesh representation from lat/lon locations
 # For more information, run `python generate_mesh.py -h`
@@ -20,7 +21,7 @@
 # configurations, use the latest version checked in to the main branch of the github repository.
 #
 # Contact:
-#   Dougie Squire <dougal.squire@anu.edu.au>
+#   Dougie Squire <dougie.squire@anu.edu.au>
 #
 # Dependencies:
 #   argparse, xarray, numpy and pandas
@@ -31,6 +32,7 @@ from datetime import datetime
 
 import numpy as np
 import xarray as xr
+import cf_xarray as cfxr
 import pandas as pd
 
 from pathlib import Path
@@ -200,7 +202,14 @@ class BaseGrid:
 
 class MomSuperGrid(BaseGrid):
 
-    def __init__(self, hgrid_filename, mask_filename=None):
+    def __init__(
+        self,
+        hgrid_filename,
+        mask_filename=None,
+        lon_name=None,
+        lat_name=None,
+        area_name=None,
+    ):
         """
         Initialise a mesh representation of h-cells from a MOM supergrid
 
@@ -210,7 +219,18 @@ class MomSuperGrid(BaseGrid):
             Path to the MOM hgrid netcdf file
         mask_filename: str, optional
             Path to a netcdf file containing a mask corresponding to the MOM hgrid
+        lon_name: str, optional
+            The name of the longitude variable. Default is "x"
+        lat_name: str, optional
+            The name of the latitude variable. Default is "y"
+        area_name: str, optional
+            The name of the area variable if one exists. Default is "area"
         """
+
+        # Set default values for lon_name, lat_name and area_name
+        lon_name = lon_name or "x"
+        lat_name = lat_name or "y"
+        area_name = area_name or "area"
 
         grid = xr.open_dataset(hgrid_filename)
         inputs = [hgrid_filename]
@@ -222,13 +242,13 @@ class MomSuperGrid(BaseGrid):
             mask = None
 
         # sum areas in elements
-        area = grid.area.values
+        area = grid[area_name].values
         area = (
             area[::2, ::2] + area[1::2, ::2] + area[1::2, 1::2] + area[::2, 1::2]
         ).flatten()
 
-        x = grid.x.values
-        y = grid.y.values
+        x = grid[lon_name].values
+        y = grid[lat_name].values
 
         # prep x corners
         ll = x[:-2:2, :-2:2]
@@ -267,9 +287,9 @@ class LatLonGrid(BaseGrid):
         self,
         grid_filename,
         mask_filename=None,
-        lon_dim="lon",
-        lat_dim="lat",
-        area_var="area",
+        lon_name=None,
+        lat_name=None,
+        area_name=None,
     ):
         """
         Initialise a mesh representation from lat/lon locations
@@ -280,16 +300,19 @@ class LatLonGrid(BaseGrid):
             Path to a netcdf file containing a lat/lon grid
         mask_filename: str, optional
             Path to a netcdf file containing a mask corresponding to the lat/lon grid
-        lon_dim: str, optional
-            The name of the longitude dimension
-        lat_dim: str, optional
-            The name of the latitude dimension
-        area_var: str, optional
-            The name of the area variable if one exists
+        lon_name: str, optional
+            The name of the longitude variable. An attempt will be made to guess the name if not passed.
+        lat_name: str, optional
+            The name of the latitude variable. An attempt will be made to guess the name if not passed.
+        area_name: str, optional
+            The name of the area variable if one exists. An attempt will be made to guess the name if not passed.
         """
 
         grid = xr.open_dataset(grid_filename, chunks=-1)
         inputs = [grid_filename]
+
+        longitude, longitude_bounds = _get_longitude(grid, lon_name)
+        latitude, latitude_bounds = _get_latitude(grid, lat_name)
 
         if mask_filename:
             mask = xr.open_dataset(mask_filename).values.flatten()
@@ -297,47 +320,19 @@ class LatLonGrid(BaseGrid):
         else:
             mask = None
 
-        if area_var in grid:
-            area = grid[area_var].values.flatten()
+        if area_name in grid:
+            area = _get_area(grid, area_name)
         else:
             area = None
 
-        x_centres = grid[lon_dim].values
-        y_centres = grid[lat_dim].values
-
-        has_lon_bounds = (
-            hasattr(grid[lon_dim], "bounds") and grid[lon_dim].bounds in grid
+        x_centres = longitude
+        y_centres = latitude
+        # flip and concat for ll, lr, ur, ul
+        x_corners = np.concatenate(
+            [longitude_bounds, longitude_bounds[..., ::-1]], axis=-1
         )
-        has_lat_bounds = (
-            hasattr(grid[lat_dim], "bounds") and grid[lat_dim].bounds in grid
-        )
-
-        if has_lon_bounds:
-            lon_bnds = grid[getattr(grid[lon_dim], "bounds")]
-
-            # flip and concat for ll, lr, ur, ul
-            x_corners = np.concatenate(
-                [lon_bnds.values, lon_bnds[..., ::-1].values], axis=-1
-            )
-        else:
-            # Average neighbouring cells to get bounds
-            ext = np.pad(x_centres, (1,), mode="reflect", reflect_type="odd")
-            bnds = (ext[:-1] + ext[1:]) / 2
-
-            # stack as ll, lr, ur, ul
-            x_corners = np.stack([bnds[:-1], bnds[1:], bnds[1:], bnds[:-1]], axis=1)
-
-        if has_lat_bounds:
-            lat_bnds = grid[getattr(grid[lat_dim], "bounds")]
-            # repeat for ll, lr, ur, ul
-            y_corners = np.repeat(lat_bnds.values, 2, axis=1)
-        else:
-            # Average neighbouring cells to get bounds
-            ext = np.pad(y_centres, (1,), mode="reflect", reflect_type="odd")
-            bnds = (ext[:-1] + ext[1:]) / 2
-
-            # stack as ll, lr, ur, ul
-            y_corners = np.stack([bnds[:-1], bnds[:-1], bnds[1:], bnds[1:]], axis=1)
+        # repeat for ll, lr, ur, ul
+        y_corners = np.repeat(latitude_bounds, 2, axis=1)
 
         # broadcast corners
         x_corners, y_corners = np.broadcast_arrays(
@@ -362,6 +357,75 @@ class LatLonGrid(BaseGrid):
             mask=mask,
             inputs=inputs,
         )
+
+
+def _get_longitude(ds, lon_name):
+    """
+    Return the longitude variable and bounds
+    """
+    if lon_name:
+        longitude = ds[lon_name]
+    else:
+        try:
+            longitude = ds.cf["longitude"]
+        except KeyError:
+            if "lon" in ds:
+                longitude = ds["lon"]
+            else:
+                raise KeyError(
+                    "Cannot automatically determine the name of the longitude variable. Please pass --lon-name"
+                )
+
+    # Get/calculate the bounds
+    if "longitude" in ds.cf.bounds:
+        longitude_bounds = ds.cf.get_bounds("longitude")
+    else:
+        ds_bounds = ds.cf.add_bounds(longitude.name)
+        longitude_bounds = ds_bounds.cf.get_bounds(longitude.name)
+
+    return longitude.values, longitude_bounds.values
+
+
+def _get_latitude(ds, lon_name):
+    """
+    Return the latitude variable and bounds
+    """
+    if lon_name:
+        latitude = ds[lon_name]
+    else:
+        try:
+            latitude = ds.cf["latitude"]
+        except KeyError:
+            if "lon" in ds:
+                latitude = ds["lat"]
+            else:
+                raise KeyError(
+                    "Cannot automatically determine the name of the latitude variable. Please pass --lon-name"
+                )
+
+    # Get/calculate the bounds
+    if "latitude" in ds.cf.bounds:
+        latitude_bounds = ds.cf.get_bounds("latitude")
+    else:
+        ds_bounds = ds.cf.add_bounds(latitude.name)
+        latitude_bounds = ds_bounds.cf.get_bounds(latitude.name)
+
+    return latitude.values, latitude_bounds.values
+
+
+def _get_area(ds, area_name):
+    """
+    Return the area variable
+    """
+    if area_name:
+        return ds[area_name]
+    else:
+        try:
+            return ds.cf["area"]
+        except KeyError:
+            raise KeyError(
+                "Cannot automatically determine the name of the area variable. Please pass --area-name"
+            )
 
 
 gridtype_dispatch = {
@@ -405,6 +469,24 @@ def main():
         required=True,
         help="The path to the mesh file to create.",
     )
+    parser.add_argument(
+        "--lon-name",
+        type=str,
+        default=None,
+        help="The name of the longitude variable in the input grid. If not passed, an attempt will be made to guess the name.",
+    )
+    parser.add_argument(
+        "--lat-name",
+        type=str,
+        default=None,
+        help="The name of the latitude variable in the input grid. If not passed, an attempt will be made to guess the name.",
+    )
+    parser.add_argument(
+        "--area-name",
+        type=str,
+        default=None,
+        help="The name of the area variable in the input grid. If not passed, an attempt will be made to guess the name.",
+    )
 
     args = parser.parse_args()
     grid_type = args.grid_type
@@ -412,6 +494,9 @@ def main():
     grid_filename = os.path.abspath(args.grid_filename)
     mesh_filename = os.path.abspath(args.mesh_filename)
     mask_filename = args.mask_filename
+    lon_name = args.lon_name
+    lat_name = args.lat_name
+    area_name = args.area_name
 
     if mask_filename:
         mask_filename = os.path.abspath(mask_filename)
@@ -427,10 +512,18 @@ def main():
         runcmd += f" --mask-filename={mask_filename}"
     if wrap_lons:
         runcmd += f" --wrap-lons"
+    if lon_name:
+        runcmd += f" --lon-name={lon_name}"
+    if lat_name:
+        runcmd += f" --lat-name={lat_name}"
+    if area_name:
+        runcmd += f" --area-name={area_name}"
 
     global_attrs = {"history": get_provenance_metadata(this_file, runcmd)}
 
-    mesh = gridtype_dispatch[grid_type](grid_filename, mask_filename)
+    mesh = gridtype_dispatch[grid_type](
+        grid_filename, mask_filename, lon_name, lat_name, area_name
+    )
 
     mesh.create_mesh(wrap_lons=wrap_lons, global_attrs=global_attrs).write(
         mesh_filename
