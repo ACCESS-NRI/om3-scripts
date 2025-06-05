@@ -359,7 +359,7 @@ def main():
             {
                 "h2": xr.DataArray(
                     np.nan_to_num(final_hrms**2, nan=0.0),
-                    dims=("y", "x"),
+                    dims=("yh", "xh"),
                     attrs={
                         "long_name": (
                             "Polynomial-fit bottom roughness squared (h^2) per model grid cell "
@@ -370,7 +370,7 @@ def main():
                 ),
                 "lon": xr.DataArray(
                     lon,
-                    dims=("y", "x"),
+                    dims=("yh", "xh"),
                     attrs={
                         "long_name": "Longitude",
                         "units": "degrees_east",
@@ -378,7 +378,7 @@ def main():
                 ),
                 "lat": xr.DataArray(
                     lat,
-                    dims=("y", "x"),
+                    dims=("yh", "xh"),
                     attrs={
                         "long_name": "Latitude",
                         "units": "degrees_north",
