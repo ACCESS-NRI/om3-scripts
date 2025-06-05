@@ -275,6 +275,9 @@ def main():
     # Remove boundary variables and update metadata to tideamp
     tideamp = update_tideamp(tideamp)
 
+    # rename dims name to xh and yh
+    tideamp = tideamp.rename({"x": "xh", "y": "yh"})
+
     # Add provenance metadata and MD5 hashes for input files.
     this_file = os.path.normpath(__file__)
     runcmd = (
