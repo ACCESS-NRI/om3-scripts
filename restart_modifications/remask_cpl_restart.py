@@ -8,6 +8,7 @@ import numpy as np
 import netCDF4 as nc
 from scipy import ndimage as nd
 from pathlib import Path
+import shutil
 
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
@@ -23,7 +24,10 @@ Note: This process only modifies the **surface-level cells** (i.e., the topmost 
 and does not fill vertical profiles for newly wet columns introduced by bathymetry changes.
 
 Example usage:
-python remask_cpl_restart.py --input_file /path/to/access-om3.cpl.r.0000-01-01-00000.nc --mask_file /path/to/kmt.nc --mask_var kmt
+python3 remask_cpl_restart.py --input_file /path/to/access-om3.cpl.r.0000-01-01-00000.nc \
+                              --output_file /path/to/access-om3.cpl.r.0000-01-01-00000.fixed.nc \
+                              --mask_file /path/to/kmt.nc\
+                              --mask_var kmt
 """
 
 
@@ -109,12 +113,17 @@ def main():
     parser.add_argument(
         "--input_file",
         required=True,
-        help="Path to the NetCDF restart file to be fixed",
+        help="Path to the NetCDF restart file (old) to be fixed",
+    )
+    parser.add_argument(
+        "--output_file",
+        required=True,
+        help="Path to write the fixed NetCDF restart file (new)",
     )
     parser.add_argument(
         "--mask_file",
         required=True,
-        help="Path to the NetCDF file containing the land mask or kmt",
+        help="Path to the NetCDF file containing the (new) land mask or kmt",
     )
     parser.add_argument(
         "--mask_var",
@@ -135,18 +144,27 @@ def main():
     ]
     missing_value = 1e30
 
+    # Copy the input restart file and preserve its metadata
+    shutil.copy2(args.input_file, args.output_file)
+
     # Load mask
     with nc.Dataset(args.mask_file) as f:
         mask = np.array(f.variables[args.mask_var][:], dtype=bool)
         mask = ~mask  # dry = True
 
-    with nc.Dataset(args.input_file, "r+") as f:
+    with nc.Dataset(args.output_file, "r+") as f:
 
         unmask_file(f, mask, missing_value, skip_vars=skip_vars)
         apply_mask_file(f, mask, skip_vars=skip_vars)
 
         this_file = os.path.normpath(__file__)
-        runcmd = f"python3 {os.path.basename(this_file)} --input_file {args.input_file} --mask_file {args.mask_file} --mask_var {args.mask_var}"
+        runcmd = (
+            f"python3 {os.path.basename(this_file)} "
+            f"--input_file {args.input_file} "
+            f"--output_file {args.output_file} "
+            f"--mask_file {args.mask_file} "
+            f"--mask_var {args.mask_var}"
+        )
 
         # Add metadata
         f.setncattr(
@@ -161,6 +179,10 @@ def main():
         f.setncattr(
             "input_file",
             f"{os.path.abspath(args.input_file)} (md5 hash: {md5sum(args.input_file)})",
+        )
+        f.setncattr(
+            "output_file",
+            f"{os.path.abspath(args.output_file)} (md5 hash: {md5sum(args.output_file)})",
         )
 
 
