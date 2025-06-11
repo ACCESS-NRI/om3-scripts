@@ -21,15 +21,28 @@ def assert_f_not_exists(p):
         raise AssertionError("File exists and should not: %s" % str(p))
 
 
-def yearly_files(dir_name, n, tmp_path):
+def yearly_files(dir_name, n, tmp_path, splits=0):
     """
-    Make empty data files
+    Make empty data files with `splits` option which will create split files
+    such as `access-om3.mom6.h.test._2010.nc.0001` ... `.nc.000N` for each year.
+
+    if `splits` is 0, then it will create files like `access-om3.mom6.h.test._2010.nc`,
+    otherwise, it will create files like `access-om3.mom6.h.test._2010.nc.0001`,
+    `access-om3.mom6.h.test._2010.nc.0002`, etc.
     """
 
     times = pd.date_range("2010-01-01", freq="YE", periods=n)
 
     out_dir = str(tmp_path) + "/" + dir_name + "/"
-    paths = [f"{out_dir}{DIAG_BASE}._{str(t)[0:4]}.nc" for t in times]
+    paths = []
+
+    for t in times:
+        year = t.year
+        if splits:
+            for i in range(1, splits + 1):
+                paths.append(f"{out_dir}{DIAG_BASE}._{year}.nc.{str(i).zfill(4)}")
+        else:
+            paths.append(f"{out_dir}{DIAG_BASE}._{str(year)}.nc")
 
     makedirs(out_dir)
 
@@ -43,18 +56,19 @@ def yearly_files(dir_name, n, tmp_path):
     return paths
 
 
+# Add `splits` parameter
 @pytest.mark.parametrize(
-    "hist_dir, use_dir, n",
+    "hist_dir, use_dir, n, splits",
     [
-        ("archive/output000", False, 12),
-        ("archive/output999", False, 1),
-        ("archive/output9999", False, 1),
-        ("archive/output574", True, 12),
+        ("archive/output000", False, 12, 0),
+        ("archive/output999", False, 1, 5),
+        ("archive/output9999", False, 1, 2),
+        ("archive/output574", True, 12, 3),
     ],
 )  # run this test with a several folder names and lengths, provide the directory as an argument sometimes
-def test_true_case(hist_dir, use_dir, n, tmp_path):
+def test_true_case(hist_dir, use_dir, n, tmp_path, splits):
 
-    yearly_paths = yearly_files(hist_dir, n, tmp_path)
+    yearly_paths = yearly_files(hist_dir, n, tmp_path, splits)
     chdir(tmp_path)
     output_dir = Path(yearly_paths[0]).parents[0]
 
@@ -71,10 +85,16 @@ def test_true_case(hist_dir, use_dir, n, tmp_path):
 
     expected_years = pd.date_range("2010-01-01", freq="YE", periods=n + 1)
 
-    # valid output filenames
-    expected_paths = [
-        f"{output_dir}/{DIAG_BASE}.{str(t)[0:4]}.nc" for t in expected_years
-    ]
+    expected_paths = []
+    for t in expected_years:
+        year = t.year
+        if splits:
+            for i in range(1, splits + 1):
+                expected_paths.append(
+                    f"{output_dir}/{DIAG_BASE}.{year}.nc.{str(i).zfill(4)}"
+                )
+        else:
+            expected_paths.append(f"{output_dir}/{DIAG_BASE}.{str(year)}.nc")
 
     for p in expected_paths[0:n]:
         assert_file_exists(p)
