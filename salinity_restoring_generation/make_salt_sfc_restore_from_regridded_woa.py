@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-# Copyright 2023 ACCESS-NRI and contributors. See the top-level COPYRIGHT file for details.
+# Copyright 2025 ACCESS-NRI and contributors. See the top-level COPYRIGHT file for details.
 # SPDX-License-Identifier: Apache-2.0
 
 # Contact: Ezhilsabareesh Kannadasan <ezhilsabareesh.kannadasan@anu.edu.au>
 
 """
-This script processes and smooths sea water salinity data from the initial conditions NetCDF files generated using https://github.com/COSIMA/initial_conditions_access-om2.
-It applies a uniform smoothing filter to the surface layer (0m depth) of the salinity for each month and concatenates the smoothed data into a single output NetCDF file.
+This script processes and smooths sea water salinity data from the initial conditions
+NetCDF files generated using https://github.com/ACCESS-NRI/initial_conditions_access-om3/.
+It applies a uniform smoothing filter to the surface layer (0m depth) of the salinity for
+each month and concatenates the smoothed data into a single output NetCDF file.
 
-The input files are 'woa23_ts_<month>_mom<resolution>.nc',
+The input files are 'woa23_ts_<month>_mom.nc' at the resolution of the desired output,
 
-The script creates an output file 'salt_sfc_restore.nc' which contains the smoothed 
+The script creates an output file 'salt_sfc_restore.nc' which contains the smoothed
 and concatenated salinity data for 12 months.
 
 Usage:
@@ -56,24 +58,23 @@ def smooth2d(src):
 def main(input_path, output_path):
     variable_to_smooth = "salt"
 
-    # Resolution from the input path
-    resolution = os.path.basename(os.path.normpath(input_path))
-
-    file_template = f"{input_path}/woa23_ts_{{:02d}}_mom{resolution}.nc"
+    file_template = f"{input_path}/woa23_ts_{{:02d}}_mom.nc"
 
     file_paths = [file_template.format(month) for month in range(1, 13)]
 
-    ds = xr.open_mfdataset(file_paths, chunks={"GRID_Y_T": -1, "GRID_X_T": -1})
+    ds = xr.open_mfdataset(
+        file_paths, chunks={"lat": -1, "lon": -1}, decode_times=False
+    )
 
     # Get the sea surface salinity
-    salt_da = ds[variable_to_smooth].isel(ZT=0, drop=True)
+    salt_da = ds[variable_to_smooth].isel(depth=0, drop=True)
 
     # Smooth the salinity in x & y (for each month)
     salt_smoothed_da = xr.apply_ufunc(
         smooth2d,
         salt_da,
-        input_core_dims=[["GRID_Y_T", "GRID_X_T"]],
-        output_core_dims=[["GRID_Y_T", "GRID_X_T"]],
+        input_core_dims=[["lat", "lon"]],
+        output_core_dims=[["lat", "lon"]],
         vectorize=True,
         dask="parallelized",
     )
@@ -82,13 +83,16 @@ def main(input_path, output_path):
         {
             "standard_name": "sea_water_salinity",
             "long_name": "Smoothed sea water salinity at level 0m",
-            "units": "1",
+            "units": "1e-3",
         }
     )
 
-    salt_smoothed_da["time"] = salt_smoothed_da.time.assign_attrs({"modulo": " "})
-
     salt_ds = salt_smoothed_da.to_dataset()
+    salt_ds["climatology_bounds"] = ds["climatology_bounds"]
+    salt_ds["time"].attrs["calendar"] = "gregorian"
+    # calendar is technically proleptic_gregorian, but FMS doesn't recognise this
+
+    salt_ds["time"] = salt_ds.time.assign_attrs({"modulo": " "})
 
     # Check git status of this .py file
     this_file = os.path.normpath(__file__)
@@ -106,11 +110,12 @@ def main(input_path, output_path):
         output_file,
         encoding={
             variable_to_smooth: {
-                "chunksizes": (1, len(ds.GRID_Y_T), len(ds.GRID_X_T)),
+                "chunksizes": (1, len(ds.lat), len(ds.lon)),
                 "compression": "zlib",
                 "complevel": 2,
             }
         },
+        unlimited_dims="time",
     )
 
     print(f"Concatenated and smoothed data saved to {output_file}")
