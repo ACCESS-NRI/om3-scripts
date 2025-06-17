@@ -1,4 +1,4 @@
-# Copyright 2023 ACCESS-NRI and contributors. See the top-level COPYRIGHT file for details.
+# Copyright 2025 ACCESS-NRI and contributors. See the top-level COPYRIGHT file for details.
 # SPDX-License-Identifier: Apache-2.0
 
 # =========================================================================================
@@ -7,7 +7,7 @@
 #
 # To run:
 #   python regrid_forcing.py --forcing-filename=<path-to-forcing-file>
-#       --hgrid-filename=<path-to-supergrid-file> --output-file=<path-to-output-file>
+#       --hgrid-filename=<path-to-supergrid-file> --output-filename=<path-to-output-file>
 # these extra arguments are available if required:
 #     --lon-name=<lon-name> --lat-name=<lat-name>
 #
@@ -20,7 +20,7 @@
 # latest version checked in to the main branch of the github repository.
 #
 # Contact:
-#   Dougie Squire <dougal.squire@anu.edu.au>
+#   Dougie Squire <dougie.squire@anu.edu.au>
 #
 # Dependencies:
 #   argparse, xarray, cf_xarray, xesmf
@@ -90,7 +90,7 @@ def main():
     )
 
     parser.add_argument(
-        "--output-file",
+        "--output-filename",
         required=True,
         help="The path to the file to be outputted.",
     )
@@ -112,7 +112,7 @@ def main():
     args = parser.parse_args()
     forcing_filename = os.path.abspath(args.forcing_filename)
     hgrid_filename = os.path.abspath(args.hgrid_filename)
-    output_file = os.path.abspath(args.output_file)
+    output_filename = os.path.abspath(args.output_filename)
     lon_name = args.lon_name
     lat_name = args.lat_name
 
@@ -121,7 +121,7 @@ def main():
     # Add some info about how the file was generated
     runcmd = (
         f"python3 {os.path.basename(this_file)} --forcing-filename={forcing_filename} "
-        f"--hgrid-filename={hgrid_filename} --output-file={output_file}"
+        f"--hgrid-filename={hgrid_filename} --output-filename={output_filename}"
     )
     if lon_name:
         runcmd += f" --lon-name={lon_name}"
@@ -153,6 +153,7 @@ def main():
     # Get source and destination grid
     grid_src = forcing_src[["lon", "lat"]]
 
+    # Destination grid is tracer cell centres
     lon_dest = hgrid["x"][1:-1:2, 1:-1:2].to_dataset(name="lon")
     lat_dest = hgrid["y"][1:-1:2, 1:-1:2].to_dataset(name="lat")
     grid_dest = xr.merge((lon_dest, lat_dest))
@@ -184,7 +185,7 @@ def main():
     forcing_regrid.attrs = forcing_regrid.attrs | global_attrs
 
     # Save output
-    forcing_regrid.to_netcdf(output_file, unlimited_dims="time")
+    forcing_regrid.to_netcdf(output_filename, unlimited_dims="time")
 
 
 if __name__ == "__main__":
