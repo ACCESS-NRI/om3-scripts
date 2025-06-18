@@ -172,14 +172,17 @@ def main():
             "nxp": ("nxp", range(forcing_regrid.sizes["nxp"])),
         }
     )
-    forcing_regrid["time"].attrs = dict(axis="T", modulo="y")
+    forcing_regrid["time"].attrs = dict(axis="T", standard_name="time", modulo="y")
     forcing_regrid["nyp"].attrs = dict(axis="Y")
     forcing_regrid["nxp"].attrs = dict(axis="X")
     forcing_regrid["lat"].attrs = dict(
-        long_name="Latitude of T-cell center", units="degree_north"
+        long_name="Latitude of T-cell center",
+        standard_name="latitude",
+        units="degree_north",
     )
     forcing_regrid["lon"].attrs = dict(
         long_name="Longitude of T-cell center",
+        standard_name="longitude",
         units="degrees_east",
     )
     forcing_regrid.attrs = forcing_regrid.attrs | global_attrs
