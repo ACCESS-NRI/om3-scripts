@@ -102,21 +102,30 @@ def main():
         "--mask-filename",
         type=str,
         default=None,
-        help="The path to a land-sea (0-1) mask for the forcing file. Cells that fall on land in the destination grid will take their values from the nearest source grid cell.",
+        help=(
+            "The path to a land-sea (0-1) mask for the forcing file. Cells that fall on land in "
+            "the destination grid will take their values from the nearest source grid cell."
+        ),
     )
 
     parser.add_argument(
         "--lon-name",
         type=str,
         default=None,
-        help="The name of the longitude variable in the input grid. If not passed, an attempt will be made to guess the name.",
+        help=(
+            "The name of the longitude variable in the input grid. If not passed, an attempt will "
+            "be made to guess the name."
+        ),
     )
 
     parser.add_argument(
         "--lat-name",
         type=str,
         default=None,
-        help="The name of the latitude variable in the input grid. If not passed, an attempt will be made to guess the name.",
+        help=(
+            "The name of the latitude variable in the input grid. If not passed, an attempt will "
+            "be made to guess the name."
+        ),
     )
 
     args = parser.parse_args()
