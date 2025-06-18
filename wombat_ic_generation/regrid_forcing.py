@@ -191,6 +191,7 @@ def main():
     grid_dest = xr.merge((lon_dest, lat_dest))
 
     # Regrid using bilinear interpolation with nearest neighbour extrapolation
+    # NOTE: This will not conserve global quantities
     regridder = xe.Regridder(
         grid_src,
         grid_dest,
