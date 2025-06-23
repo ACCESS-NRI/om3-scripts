@@ -1,3 +1,29 @@
+# Copyright 2025 COSIMA, ACCESS-NRI and contributors. See the top-level COPYRIGHT file for details.
+# SPDX-License-Identifier: Apache-2.0
+
+# =========================================================================================
+# Generate a a repeat year forcing (RYF) forcing file from  JRA55do output.
+# (May 1990 to May 1991)
+# This uses the JRA55do v1.6 from the NCI Replicated CMIP6Plus datasets
+# Paper:
+# K.D. Stewart, W.M. Kim, S. Urakawa, A.McC. Hogg, S. Yeager, H. Tsujino, H. Nakano, A.E. Kiss, G. Danabasoglu,
+# JRA55-do-based repeat year forcing datasets for driving ocean–sea-ice models,
+# Ocean Modelling, Volume 147, 2020,
+# https://doi.org/10.1016/j.ocemod.2019.101557.
+#
+# Usage:
+# First start up an interactive job or an ARE session on Gadi to get enough memory:
+# qsub -I -q express -l mem=32GB -l storage=gdata/xp65+gdata/qv56+gdata/tm70+gdata/ua8
+#
+# Then run the following to create the May-May repeat year forcings
+# module use /g/data/xp65/public/modules ; module load conda/analysis3
+# python3 make_ryf.py
+#
+# Dependencies
+#     conda/analysis3-25.04
+# =========================================================================================
+
+
 import xarray
 import netCDF4 as nc
 import os
@@ -6,11 +32,28 @@ from glob import glob
 from calendar import isleap
 import numpy as np
 
-jra55v1p4 = True  # whether to use JRA55-do v1.4
+from pathlib import Path
+import sys
 
-if jra55v1p4:
+path_root = Path(__file__).parents[1]
+sys.path.append(str(path_root))
+
+from scripts_common import get_provenance_metadata, md5sum
+
+COMP_ENCODING = {"complevel": 1, "compression": "zlib"}  # compression settings to use
+
+source_data = "jra55v1p6"
+# source_data = "jra55v1p4"
+
+if source_data == "jra55v1p4":
     # see https://raw.githubusercontent.com/COSIMA/1deg_jra55_iaf/2d6fdf53ae89124e7e11d40176813c286a8279bb/atmosphere/forcing.json
     jradir = "/g/data/qv56/replicas/input4MIPs/CMIP6/OMIP/MRI/MRI-JRA55-do-1-4-0/"
+elif source_data == "jra55v1p6":
+    jradir = "/g/data/qv56/replicas/input4MIPs/CMIP6Plus/OMIP/MRI/MRI-JRA55-do-1-6-0/"
+else:
+    jradir = "/g/data/ua8/JRA55-do/v1-3/"
+
+if source_data == "jra55v1p4" or source_data == "jra55v1p6":
     variables = [
         "rsds",
         "rlds",
@@ -26,7 +69,6 @@ if jra55v1p4:
     ]
     years = (1990,)
 else:
-    jradir = "/g/data/ua8/JRA55-do/v1-3/"
     variables = [
         "q_10",
         "rain",
@@ -69,48 +111,43 @@ for year1 in years:
     ds = {}
 
     for var in variables:
+        ryf_files = str()
         print(var)
         for y in (year1, year2):
-            if jra55v1p4:
+            if source_data == "jra55v1p4" or source_data == "jra55v1p6":
                 # see https://raw.githubusercontent.com/COSIMA/1deg_jra55_iaf/2d6fdf53ae89124e7e11d40176813c286a8279bb/atmosphere/forcing.json
                 files = glob(
                     os.path.join(
                         jradir,
-                        "atmos/3hr/{v}/gr/v20190429/{v}/{v}*{yr}*.nc".format(
-                            v=var, yr=y
-                        ),
+                        "atmos/3hr/{v}/gr/v*/{v}*{yr}*.nc".format(v=var, yr=y),
                     )
                 )
                 files += glob(
                     os.path.join(
                         jradir,
-                        "atmos/3hrPt/{v}/gr/v20190429/{v}/{v}*{yr}*.nc".format(
-                            v=var, yr=y
-                        ),
+                        "atmos/3hrPt/{v}/gr/v*/{v}*{yr}*.nc".format(v=var, yr=y),
                     )
                 )
                 files += glob(
                     os.path.join(
                         jradir,
-                        "land/day/{v}/gr/v20190429/{v}/{v}*{yr}*.nc".format(
-                            v=var, yr=y
-                        ),
+                        "land/day/{v}/gr/v*/{v}*{yr}*.nc".format(v=var, yr=y),
                     )
                 )
                 files += glob(
                     os.path.join(
                         jradir,
-                        "landIce/day/{v}/gr/v20190429/{v}/{v}*{yr}*.nc".format(
-                            v=var, yr=y
-                        ),
+                        "landIce/day/{v}/gr/v*/{v}*{yr}*.nc".format(v=var, yr=y),
                     )
                 )
             else:
                 files = glob(os.path.join(jradir, "{}.{}.*.nc".format(var, y)))
             print("Loading {} for {}".format(files[0], y))
             ds[y] = xarray.open_dataset(files[0], decode_coords=False)
+            # save info for metadata
+            ryf_files += f"{files[0]} (md5 hash: {md5sum(files[0])}, )"
         # Make a copy of the second year without time_bnds
-        ryf = ds[baseyear].drop("time_bnds")
+        ryf = ds[baseyear].drop_vars("time_bnds")
         ryf.encoding = ds[baseyear].encoding
 
         for varname in ryf.data_vars:
@@ -134,9 +171,6 @@ for year1 in years:
                 ryf[varname].loc[dict(time=timeslice2)] = (
                     ds[year1][varname].sel(time=timeslice1).values
                 )
-            # Compress the data?
-            # encdir[varname] = dict(zlib=True, shuffle=True, complevel=4)
-            # encdict[varname] = dict(contiguous=True)
 
         for dim in ryf.dims:
             # Have to give all dimensions a useless FillValue attribute, otherwise xarray
@@ -146,7 +180,7 @@ for year1 in years:
         # Make a new time dimension with no offset from origin (1900-01-01) so we don't get an offset after
         # changing calendar to noleap
         newtime = (
-            ryf.indexes["time"].values - ryf.indexes["time"].values[0]
+            ryf.indexes["time"].values - np.datetime64(f"{year2}-01-01", "D")
         ) + np.datetime64("1900-01-01", "D")
         ryf.indexes["time"].values[:] = newtime[:]
 
@@ -154,11 +188,19 @@ for year1 in years:
             "modulo": " ",
             "axis": "T",
             "cartesian_axis": "T",
+            "standard_name": "time",
             # 'calendar':'noleap'
         }
 
+        # Add some info about how the file was generated
+        this_file = os.path.normpath(__file__)
+        runcmd = f"python3 {os.path.basename(this_file)}"
+        ryf.attrs |= {"RYF_creation": get_provenance_metadata(this_file, runcmd)}
+        ryf.attrs |= {"RYF_inputFiles": ryf_files}
+
         outfile = "RYF.{}.{}_{}.nc".format(var, year1, year2)
-        ryf.to_netcdf(outfile)
+        print("Writing ", outfile)
+        ryf.to_netcdf(outfile, encoding={var: COMP_ENCODING})
 
         # Open the file again directly with the netCDF4 library to change the calendar attribute. xarray
         # has a hissy fit as this violates it's idea of CF encoding if it is done before writing the file above
