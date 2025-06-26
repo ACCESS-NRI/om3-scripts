@@ -65,13 +65,14 @@ for stream_name, var_prefix, var_suffix in stream_info_data:
     stream_info = SubElement(root, "stream_info", name=stream_name)
     if year_first == year_last:
         SubElement(stream_info, "taxmode").text = "cycle"
+        SubElement(stream_info, "dtlimit").text = "1.0"
     else:
-        SubElement(stream_info, "taxmode").text = "limit"
+        SubElement(stream_info, "taxmode").text = "extend"
+        SubElement(stream_info, "dtlimit").text = "1.e30"
     SubElement(stream_info, "tintalgo").text = "linear"
     SubElement(stream_info, "offset").text = "0"
     SubElement(stream_info, "readmode").text = "single"
     SubElement(stream_info, "mapalgo").text = "bilinear"
-    SubElement(stream_info, "dtlimit").text = "1.0"
     SubElement(stream_info, "year_first").text = str(year_first)
     SubElement(stream_info, "year_last").text = str(year_last)
     SubElement(stream_info, "year_align").text = str(year_align)
@@ -93,7 +94,7 @@ for stream_name, var_prefix, var_suffix in stream_info_data:
             if var_prefix == "friver":
                 f_prefix = f"./INPUT/land/day/"
             elif var_prefix == "licalvf":
-                f_prefix = f"./INPUT/landIce/day/{var_prefix}/gr/v20190429/{var_prefix}_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-4-0_gr_"
+                f_prefix = f"./INPUT/landIce/day/"
 
             if source_data == "jra55v1p4":
                 f_prefix += f"{var_prefix}/gr/v20190429/{var_prefix}_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-4-0_gr_"

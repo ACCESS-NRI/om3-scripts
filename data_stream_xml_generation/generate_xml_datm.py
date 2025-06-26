@@ -93,11 +93,18 @@ for stream_name in stream_info_names:
     stream_info = SubElement(root, "stream_info", name=stream_name)
     if year_first == year_last:
         SubElement(stream_info, "taxmode").text = "cycle"
+        SubElement(stream_info, "dtlimit").text = "1.0"
     else:
-        SubElement(stream_info, "taxmode").text = "limit"
+        if stream_name in STREAMS_AVE:
+            # first measurement is at 1:30am, however experiments start at midnight, so allow extension
+            SubElement(stream_info, "taxmode").text = "extend"
+            SubElement(stream_info, "dtlimit").text = "1.e30"
+        else:
+            SubElement(stream_info, "taxmode").text = "limit"
+            SubElement(stream_info, "dtlimit").text = "1.0"
+
     SubElement(stream_info, "readmode").text = "single"
     SubElement(stream_info, "mapalgo").text = "bilinear"
-    SubElement(stream_info, "dtlimit").text = "1.0"
     SubElement(stream_info, "year_first").text = str(year_first)
     SubElement(stream_info, "year_last").text = str(year_last)
     SubElement(stream_info, "year_align").text = str(year_align)
@@ -140,7 +147,7 @@ for stream_name in stream_info_names:
             if source_data == "jra55v1p4":
                 file = f"{var_name_parts[0]}/gr/v20190429/{var_name_parts[0]}_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-4-0_gr_"
             elif source_data == "jra55v1p6":
-                file = f"gr/v20240531/{var_name_parts[0]}_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-6-0_gr_"
+                file = f"{var_name_parts[0]}/gr/v20240531/{var_name_parts[0]}_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-6-0_gr_"
 
             # figure out the final month of data
             if source_data == "jra55v1p4" and year == 2019:
