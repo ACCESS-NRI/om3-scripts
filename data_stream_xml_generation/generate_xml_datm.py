@@ -23,6 +23,26 @@ sys.path.append(str(path_root))
 
 from scripts_common import get_provenance_metadata
 
+# in jra55do, these fields (fluxes) have timestamps in the middle of the average interval
+STREAMS_AVE = [
+    "JRA55do.PRSN",
+    "JRA55do.PRRN",
+    "JRA55do.LWDN",
+    "JRA55do.SWDN",
+]
+
+# in jra55do, these fields (tracers) have timestamps at the time of the point measurement
+STREAMS_PT = [
+    "JRA55do.Q_10",
+    "JRA55do.SLP_10",
+    "JRA55do.T_10",
+    "JRA55do.U_10",
+    "JRA55do.V_10",
+]
+
+source_data = "jra55v1p6"
+# source_data = "jra55v1p4"
+
 if len(sys.argv) != 3:
     print("Usage: python generate_xml_datm.py year_first year_last")
     sys.exit(1)
@@ -54,17 +74,7 @@ SubElement(metadata, "date_generated").text = datetime.now().strftime(
 SubElement(metadata, "history").text = metadata_info
 
 # Define the stream info names and corresponding var names
-stream_info_names = [
-    "JRA55do.PRSN",
-    "JRA55do.PRRN",
-    "JRA55do.LWDN",
-    "JRA55do.SWDN",
-    "JRA55do.Q_10",
-    "JRA55do.SLP_10",
-    "JRA55do.T_10",
-    "JRA55do.U_10",
-    "JRA55do.V_10",
-]
+stream_info_names = [*STREAMS_AVE, *STREAMS_PT]
 
 var_names = {
     "JRA55do.PRSN": ("prsn", "Faxa_prsn"),
@@ -83,11 +93,18 @@ for stream_name in stream_info_names:
     stream_info = SubElement(root, "stream_info", name=stream_name)
     if year_first == year_last:
         SubElement(stream_info, "taxmode").text = "cycle"
+        SubElement(stream_info, "dtlimit").text = "1.0"
     else:
-        SubElement(stream_info, "taxmode").text = "limit"
+        if stream_name in STREAMS_AVE:
+            # first measurement is at 1:30am, however experiments start at midnight, so allow extension
+            SubElement(stream_info, "taxmode").text = "extend"
+            SubElement(stream_info, "dtlimit").text = "1.e30"
+        else:
+            SubElement(stream_info, "taxmode").text = "limit"
+            SubElement(stream_info, "dtlimit").text = "1.0"
+
     SubElement(stream_info, "readmode").text = "single"
     SubElement(stream_info, "mapalgo").text = "bilinear"
-    SubElement(stream_info, "dtlimit").text = "1.5"
     SubElement(stream_info, "year_first").text = str(year_first)
     SubElement(stream_info, "year_last").text = str(year_last)
     SubElement(stream_info, "year_align").text = str(year_align)
@@ -98,19 +115,15 @@ for stream_name in stream_info_names:
     datafiles = SubElement(stream_info, "datafiles")
     datavars = SubElement(stream_info, "datavars")
 
-    if stream_name in (
-        [
-            "JRA55do.PRSN",
-            "JRA55do.PRRN",
-            "JRA55do.LWDN",
-            "JRA55do.SWDN",
-        ]
-    ) and (year_first != year_last):
-        SubElement(stream_info, "offset").text = (
-            "-5400"  # shift back 1.5hr to match RYF
-        )
+    # for linear/nearest interpolation, timestamps need to be middle of time interval
+    # for coszen, timestamps need to be start of time interval
+    # see https://github.com/ACCESS-NRI/CDEPS/blob/2733fdcfaece8eb53798f5fe19bf91137744f21c/streams/dshr_tinterp_mod.F90#L36
+    if stream_name == "JRA55do.SWDN":
+        SubElement(stream_info, "offset").text = "-5400"
+        SubElement(stream_info, "tintalgo").text = "coszen"
     else:
         SubElement(stream_info, "offset").text = "0"
+        SubElement(stream_info, "tintalgo").text = "linear"
 
     var_name_parts = var_names.get(
         stream_name,
@@ -122,11 +135,6 @@ for stream_name in stream_info_names:
     var_element = SubElement(datavars, "var")
     var_element.text = f"{var_name_parts[0]}  {var_name_parts[1]}"
 
-    if stream_name == "JRA55do.SWDN":
-        SubElement(stream_info, "tintalgo").text = "coszen"
-    else:
-        SubElement(stream_info, "tintalgo").text = "linear"
-
     for year in range(year_first, year_last + 1):
         if year_first == year_last:
             file_element = SubElement(datafiles, "file")
@@ -135,22 +143,29 @@ for stream_name in stream_info_names:
             )
         else:
             file_element = SubElement(datafiles, "file")
-            if stream_name not in [
-                "JRA55do.SLP_10",
-                "JRA55do.T_10",
-                "JRA55do.Q_10",
-                "JRA55do.U_10",
-                "JRA55do.V_10",
-            ]:
-                if year != 2019:
-                    file_element.text = f"./INPUT/atmos/3hr/{var_name_parts[0]}/gr/v20190429/{var_name_parts[0]}_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-4-0_gr_{year}01010130-{year}12312230.nc"
-                else:
-                    file_element.text = f"./INPUT/atmos/3hr/{var_name_parts[0]}/gr/v20190429/{var_name_parts[0]}_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-4-0_gr_{year}01010130-{year}01052230.nc"
+
+            if source_data == "jra55v1p4":
+                file = f"{var_name_parts[0]}/gr/v20190429/{var_name_parts[0]}_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-4-0_gr_"
+            elif source_data == "jra55v1p6":
+                file = f"{var_name_parts[0]}/gr/v20240531/{var_name_parts[0]}_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-6-0_gr_"
+
+            # figure out the final month of data
+            if source_data == "jra55v1p4" and year == 2019:
+                fin_md = "0105"  # aka 1 May 2019 (sic)
+            elif source_data == "jra55v1p6" and year == 2024:
+                fin_md = "0201"  # aka 1 Feb 2024
             else:
-                if year != 2019:
-                    file_element.text = f"./INPUT/atmos/3hrPt/{var_name_parts[0]}/gr/v20190429/{var_name_parts[0]}_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-4-0_gr_{year}01010000-{year}12312100.nc"
-                else:
-                    file_element.text = f"./INPUT/atmos/3hrPt/{var_name_parts[0]}/gr/v20190429/{var_name_parts[0]}_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-4-0_gr_{year}01010000-{year}01052100.nc"
+                fin_md = "1231"  # aka 31 Dec
+
+            # account for point or average datestamps in filename
+            if stream_name in STREAMS_AVE:
+                file_element.text = (
+                    f"./INPUT/atmos/3hr/{file}{year}01010130-{year}{fin_md}2230.nc"
+                )
+            else:
+                file_element.text = (
+                    f"./INPUT/atmos/3hrPt/{file}{year}01010000-{year}{fin_md}2100.nc"
+                )
 
 
 # Convert the XML to a nicely formatted string

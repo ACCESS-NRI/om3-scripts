@@ -22,6 +22,9 @@ sys.path.append(str(path_root))
 
 from scripts_common import get_provenance_metadata
 
+source_data = "jra55v1p6"
+# source_data = "jra55v1p4"
+
 if len(sys.argv) != 3:
     print("Usage: python generate_xml_drof.py year_first year_last")
     sys.exit(1)
@@ -62,12 +65,14 @@ for stream_name, var_prefix, var_suffix in stream_info_data:
     stream_info = SubElement(root, "stream_info", name=stream_name)
     if year_first == year_last:
         SubElement(stream_info, "taxmode").text = "cycle"
+        SubElement(stream_info, "dtlimit").text = "1.0"
     else:
-        SubElement(stream_info, "taxmode").text = "limit"
-    SubElement(stream_info, "tintalgo").text = "upper"
+        SubElement(stream_info, "taxmode").text = "extend"
+        SubElement(stream_info, "dtlimit").text = "1.e30"
+    SubElement(stream_info, "tintalgo").text = "linear"
+    SubElement(stream_info, "offset").text = "0"
     SubElement(stream_info, "readmode").text = "single"
     SubElement(stream_info, "mapalgo").text = "bilinear"
-    SubElement(stream_info, "dtlimit").text = "3.0"
     SubElement(stream_info, "year_first").text = str(year_first)
     SubElement(stream_info, "year_last").text = str(year_last)
     SubElement(stream_info, "year_align").text = str(year_align)
@@ -78,13 +83,6 @@ for stream_name, var_prefix, var_suffix in stream_info_data:
     datafiles = SubElement(stream_info, "datafiles")
     datavars = SubElement(stream_info, "datavars")
 
-    if year_first == year_last:
-        SubElement(stream_info, "offset").text = "0"  # RYF starts at midnight
-    else:
-        SubElement(stream_info, "offset").text = (
-            "-43200"  # shift backwards from noon to midnight to match RYF
-        )
-
     var_element = SubElement(datavars, "var")
     var_element.text = f"{var_prefix} {var_suffix}"
 
@@ -93,17 +91,24 @@ for stream_name, var_prefix, var_suffix in stream_info_data:
             file_element = SubElement(datafiles, "file")
             file_element.text = f"./INPUT/RYF.{var_prefix}.{year+90}_{year + 90 + 1}.nc"
         else:
-            file_element = SubElement(datafiles, "file")
             if var_prefix == "friver":
-                if year != 2019:
-                    file_element.text = f"./INPUT/land/day/{var_prefix}/gr/v20190429/friver_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-4-0_gr_{year}0101-{year}1231.nc"
-                else:
-                    file_element.text = f"./INPUT/land/day/{var_prefix}/gr/v20190429/friver_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-4-0_gr_{year}0101-{year}0105.nc"
+                f_prefix = f"./INPUT/land/day/"
+            elif var_prefix == "licalvf":
+                f_prefix = f"./INPUT/landIce/day/"
+
+            if source_data == "jra55v1p4":
+                f_prefix += f"{var_prefix}/gr/v20190429/{var_prefix}_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-4-0_gr_"
+            elif source_data == "jra55v1p6":
+                f_prefix += f"{var_prefix}/gr/v20240531/{var_prefix}_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-6-0_gr_"
+
+            file_element = SubElement(datafiles, "file")
+            if source_data == "jra55v1p4" and year == 2019:
+                file_element.text = f"{f_prefix}{year}0101-{year}0105.nc"
+            elif source_data == "jra55v1p6" and year == 2024:
+                file_element.text = f"{f_prefix}{year}0101-{year}0201.nc"
             else:
-                if year != 2019:
-                    file_element.text = f"./INPUT/landIce/day/{var_prefix}/gr/v20190429/licalvf_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-4-0_gr_{year}0101-{year}1231.nc"
-                else:
-                    file_element.text = f"./INPUT/landIce/day/{var_prefix}/gr/v20190429/licalvf_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-4-0_gr_{year}0101-{year}0105.nc"
+                file_element.text = f"{f_prefix}{year}0101-{year}1231.nc"
+
 
 # Convert the XML to a nicely formatted string
 xml_str = minidom.parseString(tostring(root)).toprettyxml(indent="  ")
