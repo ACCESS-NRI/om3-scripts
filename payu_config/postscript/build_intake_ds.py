@@ -5,7 +5,7 @@
 # use:
 #     - /g/data/xp65/public/modules
 # load:
-#     - conda/analysis3-25.02
+#     - conda/analysis3-25.05
 
 from access_nri_intake.source import builders
 import os
@@ -66,7 +66,7 @@ if __name__ == "__main__":
     builder.invalid_assets
 
     builder.save(
-        name="intake_esm_ds",
+        name="experiment_datastore",
         description=description(),
         directory=ARCHIVE_PATH,
     )
