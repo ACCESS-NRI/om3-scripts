@@ -7,7 +7,8 @@
 # load:
 #     - conda/analysis3-25.05
 
-from access_nri_intake.source import builders
+from access_nri_intake.source.builders import AccessOm3Builder
+from access_nri_intake.experiment import use_datastore
 import os
 import sys
 from pathlib import Path
@@ -56,17 +57,8 @@ def description():
 
 if __name__ == "__main__":
 
-    builder = builders.AccessOm3Builder(path=ARCHIVE_PATH)
-
     print("LOG: Building intake-esm datastore")
 
-    builder.build()
-
-    # Log invalid assets
-    builder.invalid_assets
-
-    builder.save(
-        name="experiment_datastore",
-        description=description(),
-        directory=ARCHIVE_PATH,
+    use_datastore(
+        experiment_dir=ARCHIVE_PATH, description=description(), builder=AccessOm3Builder
     )
