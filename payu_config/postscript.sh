@@ -1,4 +1,6 @@
 #!/usr/bin/bash
+# Copyright 2025 ACCESS-NRI and contributors. See the top-level COPYRIGHT file for details.
+# SPDX-License-Identifier: Apache-2.0
 #PBS -l ncpus=104
 #PBS -l mem=500GB
 #PBE -l jobfs=100GB
