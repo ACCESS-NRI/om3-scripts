@@ -8,6 +8,7 @@
 #PBS -l walltime=00:30:00
 #PBS -l wd
 #PBS -v PYTHONNOUSERSITE=True
+#PBS -j oe
 
 module purge
 module use /g/data/xp65/public/modules 
