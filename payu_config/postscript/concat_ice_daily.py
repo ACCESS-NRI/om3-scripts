@@ -44,13 +44,13 @@ def start_of_day(dt):
     return dt_class(first_day.year, first_day.month, first_day.day)
 
 
-def monthly_ranges(start, end):
+def monthly_ranges(start, end, cal):
     monthly_range = xr.date_range(
         start=str(start_of_day(start)),
         end=str(end),
         freq="MS",
         use_cftime=True,
-        calendar=daily_ds.time.values[0].calendar,
+        calendar=cal,
     )
 
     # add the end in
@@ -59,45 +59,31 @@ def monthly_ranges(start, end):
     return monthly_range
 
 
-def start_client():
+def start_client(assume_gadi=True):
     """
     start dask using 6GB of memory per worker, and a max of one node (just incase
     this is a multi-node job)
     """
-    mem_worker = 6 * 1024 * 1024 * 1024
-    n_worker = int(
-        int(os.environ["PBS_VMEM"]) / int(os.environ["PBS_NNODES"]) / mem_worker
-    )
-    jobfs = os.environ["PBS_JOBFS"]
+    if assume_gadi:
+        mem_worker = 6 * 1024 * 1024 * 1024
+        n_worker = int(
+            int(os.environ["PBS_VMEM"]) / int(os.environ["PBS_NNODES"]) / mem_worker
+        )
+        jobfs = os.environ["PBS_JOBFS"]
 
-    return Client(
-        threads_per_worker=1,
-        n_workers=n_worker,
-        memory_limit=mem_worker,
-        local_directory=jobfs,
-    )
-
-
-if __name__ == "__main__":
-
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Concatenate daily cice output into one file per month"
-    )
-
-    parser.add_argument(
-        "--directory",
-        type=str,
-        required=False,
-        help="The directory to be processed",
-    )
-
-    args = parser.parse_args()
-
-    if args.directory is not None:
-        directory = args.directory
+        return Client(
+            threads_per_worker=1,
+            n_workers=n_worker,
+            memory_limit=mem_worker,
+            local_directory=jobfs,
+        )
     else:
+        return Client(threads_per_worker=1, n_workers=4)
+
+
+def concat_ice_daily(directory=None, assume_gadi=True):
+
+    if directory is None:
         output_f = glob.glob("archive/output???")
         if not output_f:
             warnings.warn(f"No output found in archive/output???")
@@ -113,7 +99,7 @@ if __name__ == "__main__":
         warnings.warn(f"No daily output files found in {directory}")
         exit()
 
-    client = start_client()
+    client = start_client(assume_gadi)
 
     daily_ds = xr.open_mfdataset(
         daily_f,
@@ -136,7 +122,9 @@ if __name__ == "__main__":
 
     # find months in dataset
     times = daily_ds.time.values
-    monthly_range = monthly_ranges(np.min(times), np.max(times))
+    monthly_range = monthly_ranges(
+        np.min(times), np.max(times), daily_ds.time.values[0].calendar
+    )
     monthly_pairs = list(zip(monthly_range[:-1], monthly_range[1:]))
     monthly_ncs = list()
 
@@ -173,3 +161,23 @@ if __name__ == "__main__":
             os.remove(file)
 
     print(f"concat_ice_daily: finished processing {directory}")
+
+
+if __name__ == "__main__":
+
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Concatenate daily cice output into one file per month"
+    )
+
+    parser.add_argument(
+        "--directory",
+        type=str,
+        required=False,
+        help="The directory to be processed",
+    )
+
+    args = parser.parse_args()
+
+    concat_ice_daily(args.directory)
