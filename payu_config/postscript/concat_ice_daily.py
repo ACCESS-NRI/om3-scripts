@@ -84,7 +84,7 @@ def start_client(assume_gadi=True):
 def concat_ice_daily(directory=None, assume_gadi=True):
 
     if directory is None:
-        output_f = glob.glob("archive/output???")
+        output_f = glob.glob("archive/output*")
         if not output_f:
             warnings.warn(f"No output found in archive/output???")
             exit()
@@ -130,16 +130,20 @@ def concat_ice_daily(directory=None, assume_gadi=True):
 
     # slice ds for each month, and make a dask delayed object to save to file
     for iRange in monthly_pairs:
-        month_ds = daily_ds.sel(time=slice(*iRange))
 
-        month_ds = month_ds.chunk({"time": len(month_ds.time)})
+        month_f = Path(f"{directory}/{MONTHLY_STUB_FN}{str(iRange[0])[0:7]}.nc")
 
-        monthly_ncs.append(
-            month_ds.to_netcdf(
-                f"{directory}/{MONTHLY_STUB_FN}{str(iRange[0])[0:7]}.nc",
-                compute=False,
+        if not month_f.exists():
+            month_ds = daily_ds.sel(time=slice(*iRange))
+
+            month_ds = month_ds.chunk({"time": len(month_ds.time)})
+
+            monthly_ncs.append(
+                month_ds.to_netcdf(
+                    month_f,
+                    compute=False,
+                )
             )
-        )
 
     # run all dask tasks concurrently
     dask.compute(monthly_ncs)

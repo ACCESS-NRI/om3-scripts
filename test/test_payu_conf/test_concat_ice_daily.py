@@ -72,6 +72,8 @@ def hist_base(request):
     "hist_dir, ndays, use_dir, nmonths",
     [
         ("Default", 365, False, 12),
+        ("Default", 30, False, 1),  # allow partial months
+        ("Default", 1, False, 1),
         ("archive/output999", 31, False, 1),
         ("archive/output9999", 31, False, 1),
         ("archive/output574", 365, True, 12),
@@ -105,31 +107,6 @@ def test_true_case(hist_dir, ndays, use_dir, nmonths, hist_base, tmp_path):
         assert_f_not_exists(p)
 
     for p in daily_paths:
-        assert_f_not_exists(p)
-
-
-@pytest.mark.parametrize("hist_dir, ndays", [("Default", 1), ("Default", 30)])
-def test_incomplete_month(hist_dir, ndays, hist_base, tmp_path):
-    """
-    Run the script to convert the daily data into monthly files, with less than 28 days data, and check no things happen.
-    """
-
-    daily_paths = daily_files(hist_dir, hist_base, ndays, tmp_path)
-
-    chdir(tmp_path)
-    output_dir = Path(daily_paths[0]).parents[0]
-
-    concat_ice_daily(directory=None, assume_gadi=False)
-    expected_months = pd.date_range("2010-01-01", freq="ME", periods=1)
-
-    monthly_paths = [
-        f"{output_dir}/{hist_base}.{str(t)[0:7]}.nc" for t in expected_months
-    ]
-
-    for p in daily_paths:
-        assert_file_exists(p)
-
-    for p in monthly_paths:
         assert_f_not_exists(p)
 
 
