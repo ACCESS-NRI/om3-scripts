@@ -6,7 +6,7 @@ from pathlib import Path
 path_root = Path(__file__).parents[2]
 sys.path.append(str(path_root))
 
-from payu_config.archive_scripts.build_intake_ds import description
+from payu_config.postscript.build_intake_ds import description
 
 
 def test_no_metadata_file(tmp_path):
