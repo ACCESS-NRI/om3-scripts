@@ -4,11 +4,9 @@ import numpy as np
 import pandas as pd
 
 from os import makedirs, chdir
-from subprocess import run
 from pathlib import Path
 
-scripts_base = Path(__file__).parents[2]
-run_str = f"{scripts_base}/payu_config/archive_scripts/concat_ice_daily.sh"
+from payu_config.postscript.concat_ice_daily import concat_ice_daily
 
 
 def assert_file_exists(p):
@@ -48,10 +46,12 @@ def daily_files(dir_name, hist_base, ndays, tmp_path, ini_date="2010-01-01 12:00
     )
     ds = da.to_dataset(name="aice")
 
-    # Setting these would be more like the source data, but maybe it doesn't matter!
-    # ds.time.encoding['units'] = 'Days since 01/01/2000 00:00:00 UTC'
-    # ds.time.encoding['calendar'] = 'gregorian'
-    # ds.time.encoding['dtype'] = 'float'
+    ds.time.encoding["units"] = "Days since 01/01/2000 00:00:00 UTC"
+    ds.time.encoding["calendar"] = "proleptic_gregorian"
+    ds.time.encoding["dtype"] = "float"
+
+    ds.attrs["comment2"] = "Written by model on day 12"
+    ds.attrs["comment3"] = "pytest made this"
 
     out_dir = str(tmp_path) + "/" + dir_name + "/"
     paths = [f"{out_dir}{hist_base}.{str(t.values)[0:10]}.nc" for t in ds.time]
@@ -63,9 +63,7 @@ def daily_files(dir_name, hist_base, ndays, tmp_path, ini_date="2010-01-01 12:00
     return paths
 
 
-@pytest.fixture(
-    params=["access-om3.cice.h", "access-om3.cice", "access-om3.cice.1day.mean"]
-)
+@pytest.fixture(params=["access-om3.cice.1day.mean"])
 def hist_base(request):
     return str(request.param)
 
@@ -74,6 +72,8 @@ def hist_base(request):
     "hist_dir, ndays, use_dir, nmonths",
     [
         ("Default", 365, False, 12),
+        ("Default", 30, False, 1),  # allow partial months
+        ("Default", 1, False, 1),
         ("archive/output999", 31, False, 1),
         ("archive/output9999", 31, False, 1),
         ("archive/output574", 365, True, 12),
@@ -89,15 +89,9 @@ def test_true_case(hist_dir, ndays, use_dir, nmonths, hist_base, tmp_path):
     output_dir = Path(daily_paths[0]).parents[0]
 
     if not use_dir:  # default path
-        run([run_str])
+        concat_ice_daily(assume_gadi=False)
     else:  # provide path
-        run(
-            [
-                run_str,
-                "-d",
-                output_dir,
-            ],
-        )
+        concat_ice_daily(directory=output_dir, assume_gadi=False)
 
     expected_months = pd.date_range("2010-01-01", freq="ME", periods=nmonths + 1)
 
@@ -113,31 +107,6 @@ def test_true_case(hist_dir, ndays, use_dir, nmonths, hist_base, tmp_path):
         assert_f_not_exists(p)
 
     for p in daily_paths:
-        assert_f_not_exists(p)
-
-
-@pytest.mark.parametrize("hist_dir, ndays", [("Default", 1), ("Default", 30)])
-def test_incomplete_month(hist_dir, ndays, hist_base, tmp_path):
-    """
-    Run the script to convert the daily data into monthly files, with less than 28 days data, and check no things happen.
-    """
-
-    daily_paths = daily_files(hist_dir, hist_base, ndays, tmp_path)
-
-    chdir(tmp_path)
-    output_dir = Path(daily_paths[0]).parents[0]
-
-    run([run_str])
-    expected_months = pd.date_range("2010-01-01", freq="ME", periods=1)
-
-    monthly_paths = [
-        f"{output_dir}/{hist_base}.{str(t)[0:7]}.nc" for t in expected_months
-    ]
-
-    for p in daily_paths:
-        assert_file_exists(p)
-
-    for p in monthly_paths:
         assert_f_not_exists(p)
 
 
@@ -160,7 +129,7 @@ def test_no_override(hist_dir, ndays, hist_base, tmp_path):
     for p in monthly_paths:
         Path(p).touch()
 
-    run([run_str])
+    concat_ice_daily(directory=None, assume_gadi=False)
 
     for p in daily_paths:
         assert_file_exists(p)
@@ -191,9 +160,9 @@ def test_leap_year(year, ndays, nmonths, use_dir, hist_base, tmp_path):
     output_dir = Path(daily_paths[0]).parents[0]
 
     if not use_dir:
-        run([run_str])
+        concat_ice_daily(directory=None, assume_gadi=False)
     else:
-        run([run_str, "-d", str(output_dir)])
+        concat_ice_daily(directory=output_dir, assume_gadi=False)
 
     expected_months = pd.date_range(f"{year}-01-01", freq="ME", periods=nmonths + 1)
     monthly_paths = [

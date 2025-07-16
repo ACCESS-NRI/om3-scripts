@@ -3,6 +3,7 @@ pytest
 xarray
 pandas
 netCDF4
+dask
 access-nri-intake
 setuptools
 ruamel.yaml
