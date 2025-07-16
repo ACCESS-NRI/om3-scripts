@@ -13,4 +13,4 @@ module purge
 module use /g/data/xp65/public/modules 
 module load conda/analysis3-25.05
 
-python3 $SCRIPTS_DIR/postscript/build_intake_ds.py
+python3 $SCRIPTS_DIR/payu_config/postscript/build_intake_ds.py
