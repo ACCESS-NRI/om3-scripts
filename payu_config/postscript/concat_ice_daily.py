@@ -1,11 +1,15 @@
 #!python3
 # Copyright 2025 ACCESS-NRI and contributors. See the top-level COPYRIGHT file for details.
 # SPDX-License-Identifier: Apache-2.0
+#
+# For daily cice output files, concatenate them together into one file per month
+# either use a provided directory through the --directory argument, or use the latest
+# from the `archive/ouput???` folders
+#
 # dependencies: module use /g/data/xp65/public/modules ; module load conda/analysis3
 #
-#
 # example:
-# qsub -v PROJECT,SCRIPTS_DIR=/g/data/tm70/as2285/om3-scripts/payu_config/ -lstorage=${PBS_NCI_STORAGE}+gdata/xp65 /g/data/tm70/as2285/om3-scripts/payu_config/postscript.sh
+# qsub -v PROJECT,SCRIPTS_DIR=/g/data/tm70/as2285/om3-scripts/ -lstorage=${PBS_NCI_STORAGE}+gdata/xp65 /g/data/tm70/as2285/om3-scripts/payu_config/postscript.sh
 
 import xarray as xr
 import numpy as np
@@ -56,24 +60,22 @@ def monthly_ranges(start, end):
 
 
 def start_client():
-    # start dask
-    # we seem to need about ~6GB per worker to support chunking monthly
+    """
+    start dask using 6GB of memory per worker, and a max of one node (just incase
+    this is a multi-node job)
+    """
     mem_worker = 6 * 1024 * 1024 * 1024
-    # find number of workers on first node to achieve this amount of memory
-
     n_worker = int(
         int(os.environ["PBS_VMEM"]) / int(os.environ["PBS_NNODES"]) / mem_worker
     )
     jobfs = os.environ["PBS_JOBFS"]
 
-    client = Client(
+    return Client(
         threads_per_worker=1,
         n_workers=n_worker,
         memory_limit=mem_worker,
         local_directory=jobfs,
     )
-
-    return client
 
 
 if __name__ == "__main__":
@@ -92,10 +94,14 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+
     if args.directory is not None:
         directory = args.directory
     else:
         output_f = glob.glob("archive/output???")
+        if not output_f:
+            warnings.warn(f"No output found in archive/output???")
+            exit()
         output_f.sort()
         directory = output_f[-1]
 
@@ -115,7 +121,7 @@ if __name__ == "__main__":
         data_vars="minimal",
         coords="minimal",
         combine_attrs="override",
-        # parallel=True,
+        parallel=True,
         decode_times=xr.coders.CFDatetimeCoder(use_cftime=True),
     )
 
@@ -128,6 +134,7 @@ if __name__ == "__main__":
     runcmd = f"python3 {os.path.basename(this_file)} --directory={os.path.abspath(directory)}"
     daily_ds.attrs["postprocessing"] = get_provenance_metadata(this_file, runcmd)
 
+    # find months in dataset
     times = daily_ds.time.values
     monthly_range = monthly_ranges(np.min(times), np.max(times))
     monthly_pairs = list(zip(monthly_range[:-1], monthly_range[1:]))
@@ -163,6 +170,6 @@ if __name__ == "__main__":
     for file in daily_f:
         yyyymm = Path(file).stem[-10:-3]  # extracts YYYY-MM from YYYY-MM-DD
         if yyyymm in monthly_keys:
-            os.remove(file)  # or use Path(file).unlink()
+            os.remove(file)
 
     print(f"concat_ice_daily: finished processing {directory}")
