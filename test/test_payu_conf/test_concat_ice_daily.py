@@ -8,7 +8,7 @@ from subprocess import run
 from pathlib import Path
 
 scripts_base = Path(__file__).parents[2]
-run_str = f"{scripts_base}/payu_config/archive_scripts/concat_ice_daily.sh"
+run_str = f"python3 {scripts_base}/payu_config/postscript/concat_ice_daily.py"
 
 
 def assert_file_exists(p):
