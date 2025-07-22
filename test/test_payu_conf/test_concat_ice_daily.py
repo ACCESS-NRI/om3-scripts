@@ -19,7 +19,9 @@ def assert_f_not_exists(p):
         raise AssertionError("File exists and should not: %s" % str(p))
 
 
-def daily_files(dir_name, hist_base, ndays, tmp_path, ini_date="2010-01-01 12:00"):
+def dummy_files(
+    dir_name, hist_base, n, tmp_path, ini_date="2010-01-01 12:00", freq="D"
+):
     """
     Make `ndays` of fake data, starting at `ini_date`,
     and then write to daily files.
@@ -36,28 +38,35 @@ def daily_files(dir_name, hist_base, ndays, tmp_path, ini_date="2010-01-01 12:00
     ny = 50
 
     da = xr.DataArray(
-        np.random.rand(ndays, nx, ny),
+        np.random.rand(n, nx, ny),
         dims=[
             "time",
             "x",
             "y",
-        ],  # there is a bug in nco that means time needs to be the first dimension!
-        coords={"time": pd.date_range(ini_date, freq="D", periods=ndays)},
+        ],
+        coords={
+            "time": xr.date_range(
+                ini_date,
+                freq=freq,
+                periods=n,
+                calendar="proleptic_gregorian",
+                use_cftime=True,
+            )
+        },
     )
     ds = da.to_dataset(name="aice")
 
-    ds.time.encoding["units"] = "Days since 01/01/2000 00:00:00 UTC"
-    ds.time.encoding["calendar"] = "proleptic_gregorian"
-    ds.time.encoding["dtype"] = "float"
-
-    ds.attrs["comment2"] = "Written by model on day 12"
+    ds.attrs["comment2"] = "Written by model on day xx"
     ds.attrs["comment3"] = "pytest made this"
 
     out_dir = str(tmp_path) + "/" + dir_name + "/"
-    paths = [f"{out_dir}{hist_base}.{str(t.values)[0:10]}.nc" for t in ds.time]
+    if freq == "D":
+        paths = [f"{out_dir}{hist_base}.{str(t.values)[0:10]}.nc" for t in ds.time]
+    elif freq == "ME":
+        paths = [f"{out_dir}{hist_base}.{str(t.values)[0:7]}.nc" for t in ds.time]
     datasets = [ds.sel(time=slice(t, t)) for t in ds.time]
 
-    makedirs(out_dir)
+    makedirs(out_dir, exist_ok=True)
     xr.save_mfdataset(datasets, paths, unlimited_dims=["time"])
 
     return paths
@@ -72,8 +81,6 @@ def hist_base(request):
     "hist_dir, ndays, use_dir, nmonths",
     [
         ("Default", 365, False, 12),
-        ("Default", 30, False, 1),  # allow partial months
-        ("Default", 1, False, 1),
         ("archive/output999", 31, False, 1),
         ("archive/output9999", 31, False, 1),
         ("archive/output574", 365, True, 12),
@@ -84,7 +91,7 @@ def test_true_case(hist_dir, ndays, use_dir, nmonths, hist_base, tmp_path):
     Run the script to convert the daily data into monthly files, and check the monthly files and the daily files dont exist.
     """
 
-    daily_paths = daily_files(hist_dir, hist_base, ndays, tmp_path)
+    daily_paths = dummy_files(hist_dir, hist_base, ndays, tmp_path)
     chdir(tmp_path)
     output_dir = Path(daily_paths[0]).parents[0]
 
@@ -110,26 +117,60 @@ def test_true_case(hist_dir, ndays, use_dir, nmonths, hist_base, tmp_path):
         assert_f_not_exists(p)
 
 
-@pytest.mark.parametrize("hist_dir, ndays", [("Default", 31), ("Default", 27)])
-def test_no_override(hist_dir, ndays, hist_base, tmp_path):
+@pytest.mark.parametrize("hist_dir, ndays", [("Default", 1), ("Default", 30)])
+def test_incomplete_month(hist_dir, ndays, hist_base, tmp_path):
     """
-    Run the script to convert the daily data into monthly files, but the output filename already exists, and check nothing happens.
+    Run the script to convert the daily data into monthly files, with less than 28 days data, and check no things happen.
     """
 
-    daily_paths = daily_files(hist_dir, hist_base, ndays, tmp_path)
+    daily_paths = dummy_files(hist_dir, hist_base, ndays, tmp_path)
 
     chdir(tmp_path)
     output_dir = Path(daily_paths[0]).parents[0]
 
-    expected_months = pd.date_range("2010-01-01", freq="ME", periods=1)
+    with pytest.raises(Exception):
+        concat_ice_daily(directory=output_dir, assume_gadi=False)
 
+    expected_months = pd.date_range("2010-01-01", freq="ME", periods=1)
     monthly_paths = [
         f"{output_dir}/{hist_base}.{str(t)[0:7]}.nc" for t in expected_months
     ]
-    for p in monthly_paths:
-        Path(p).touch()
 
-    concat_ice_daily(directory=None, assume_gadi=False)
+    for p in daily_paths:
+        assert_file_exists(p)
+
+    for p in monthly_paths:
+        assert_f_not_exists(p)
+
+
+@pytest.mark.parametrize(
+    "hist_dir, ndays", [("Default", 27), ("Default", 31), ("Default", 59)]
+)
+def test_no_del_result_does_not_exist(hist_dir, ndays, hist_base, tmp_path):
+    """
+    Run the script to convert the daily data into monthly files, but the output filename already exists with different data.
+    In this case, don't delete anything because the monthly and daily data are different.
+    """
+
+    daily_paths = dummy_files(hist_dir, hist_base, ndays, tmp_path)
+
+    chdir(tmp_path)
+    output_dir = Path(daily_paths[0]).parents[0]
+
+    monthly_paths = dummy_files(hist_dir, hist_base, 2, tmp_path, freq="ME")
+
+    assert len(monthly_paths) == 2
+
+    # check test setup
+    for p in daily_paths:
+        assert_file_exists(p)
+
+    for p in monthly_paths:
+        assert_file_exists(p)
+
+    # run function
+    with pytest.raises(Exception):
+        concat_ice_daily(directory=None, assume_gadi=False)
 
     for p in daily_paths:
         assert_file_exists(p)
@@ -152,8 +193,8 @@ def test_leap_year(year, ndays, nmonths, use_dir, hist_base, tmp_path):
     """
     hist_dir = "Default"
 
-    daily_paths = daily_files(
-        hist_dir, hist_base, ndays, tmp_path, ini_date=f"{year}-01-01"
+    daily_paths = dummy_files(
+        hist_dir, hist_base, ndays, tmp_path, ini_date=f"{year}-01-01 12:00"
     )
 
     chdir(tmp_path)
