@@ -127,7 +127,7 @@ class Concat_Ice_Daily:
             raise Exception(f"No daily output files found in {directory}")
 
         self.client = start_client(assume_gadi)
-        daily_ds = lazy_open(self.daily_f)
+        daily_ds = lazy_open(self.daily_f).chunk({"time": 31}).persist()
 
         # del incorrect metadata
         del daily_ds.attrs["comment2"]
