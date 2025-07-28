@@ -6,7 +6,7 @@ import pandas as pd
 from os import makedirs, chdir
 from pathlib import Path
 
-from payu_config.postscript.concat_ice_daily import concat_ice_daily
+from payu_config.postscript.concat_ice_daily import concat_ice_daily, Concat_Ice_Daily
 
 
 def assert_file_exists(p):
