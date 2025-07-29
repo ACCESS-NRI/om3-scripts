@@ -6,7 +6,7 @@ import pandas as pd
 from os import makedirs, chdir
 from pathlib import Path
 
-from payu_config.postscript.concat_ice_daily import concat_ice_daily
+from payu_config.postscript.concat_ice_daily import concat_ice_daily, Concat_Ice_Daily
 
 
 def assert_file_exists(p):
@@ -215,3 +215,28 @@ def test_leap_year(year, ndays, nmonths, use_dir, hist_base, tmp_path):
 
     for p in daily_paths:
         assert_f_not_exists(p)
+
+
+@pytest.mark.parametrize("ndays", [62, 60, 90, 30, 31, 59])
+def test_chunk_and_persist(hist_base, tmp_path, ndays):
+    """
+    Ensure daily_ds is correctly chunked and persisted with time chunk size = 31.
+    """
+
+    daily_paths = dummy_files("Default", hist_base, ndays, tmp_path)
+    chdir(tmp_path)
+
+    concat = Concat_Ice_Daily(directory=None, assume_gadi=False)
+    daily_ds = concat.daily_ds
+
+    assert isinstance(daily_ds["aice"].data, np.ndarray) is False
+    assert "time" in daily_ds.chunks
+
+    full_chunks = ndays // 31
+    last_chunk = ndays % 31
+    expected_chunks = (31,) * full_chunks + ((last_chunk,) if last_chunk else ())
+
+    assert daily_ds.chunks["time"] == expected_chunks
+
+    # Cleanup
+    concat.client.close()
