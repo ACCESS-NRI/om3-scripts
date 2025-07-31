@@ -49,8 +49,7 @@ EARTH_R = 6.37122e6
 
 
 def mom6_mask_detection(
-    ds, minimum_depth=0.0, masking_depth=None, cice_mask_filename=None
-):
+    ds, minimum_depth=0.0, masking_depth=None):
     """
     Detect and generate an ocean mask (1 = wet, 0 = land) from a topog.nc.
     https://github.com/ACCESS-NRI/MOM6/blob/569ba3126835bfcdea5e39c46eeae01938f5413c/src/initialization/MOM_grid_initialize.F90#L1180
@@ -60,7 +59,7 @@ def mom6_mask_detection(
         raise ValueError("Cannot detect topog: dataset lacks 'depth' variable!")
 
     depth = ds["depth"]
-    print("a")
+
     # topog contains nans
     is_wet = ~np.isnan(depth)
 
@@ -73,11 +72,6 @@ def mom6_mask_detection(
             )
 
         mask = (depth > masking_depth) & is_wet
-
-    if cice_mask_filename:
-        mask_ds = xr.Dataset({"kmt": mask})
-        mask_ds.to_netcdf(cice_mask_filename)
-        print(f"Saved cice mask to: {cice_mask_filename}")
 
     return mask.astype(np.int8).values.flatten()
 
@@ -247,7 +241,6 @@ class MomSuperGrid(BaseGrid):
         area_name=None,
         minimum_depth=0,
         masking_depth=None,
-        cice_mask_filename=None,
     ):
         """
         Initialise a mesh representation of h-cells from a MOM supergrid
@@ -284,7 +277,6 @@ class MomSuperGrid(BaseGrid):
                 topo,
                 minimum_depth=minimum_depth,
                 masking_depth=masking_depth,
-                cice_mask_filename=cice_mask_filename,
             )
             inputs += [topog_filename]
         else:
@@ -341,7 +333,6 @@ class LatLonGrid(BaseGrid):
         area_name=None,
         minimum_depth=0,
         masking_depth=None,
-        cice_mask_filename=None,
     ):
         """
         Initialise a mesh representation from lat/lon locations
@@ -372,7 +363,6 @@ class LatLonGrid(BaseGrid):
                 topo,
                 minimum_depth=minimum_depth,
                 masking_depth=masking_depth,
-                cice_mask_filename=cice_mask_filename,
             )
             inputs += [topog_filename]
         else:
@@ -542,12 +532,6 @@ def main():
         ),
     )
     parser.add_argument(
-        "--cice-mask-filename",
-        type=str,
-        default=None,
-        help=("The path to the netcdf file specifying the cice mask, i.e., kmt.nc."),
-    )
-    parser.add_argument(
         "--mesh-filename",
         type=str,
         required=True,
@@ -580,7 +564,6 @@ def main():
     topog_filename = args.topog_filename
     minimum_depth = args.minimum_depth
     masking_depth = args.masking_depth
-    cice_mask_filename = args.cice_mask_filename
     lon_name = args.lon_name
     lat_name = args.lat_name
     area_name = args.area_name
@@ -601,8 +584,6 @@ def main():
             runcmd += f" --minimum-depth={minimum_depth}"
         if masking_depth:
             runcmd += f" --masking-depth={masking_depth}"
-        if cice_mask_filename:
-            runcmd += f" --cice-mask-filename={cice_mask_filename}"
     if wrap_lons:
         runcmd += f" --wrap-lons"
     if lon_name:
@@ -622,7 +603,6 @@ def main():
         area_name,
         minimum_depth,
         masking_depth,
-        cice_mask_filename,
     )
 
     mesh.create_mesh(wrap_lons=wrap_lons, global_attrs=global_attrs).write(
