@@ -48,8 +48,7 @@ from scripts_common import get_provenance_metadata, md5sum
 EARTH_R = 6.37122e6
 
 
-def mom6_mask_detection(
-    ds, minimum_depth=0.0, masking_depth=None):
+def mom6_mask_detection(ds, minimum_depth=0.0, masking_depth=None):
     """
     Detect and generate an ocean mask (1 = wet, 0 = land) from a topog.nc.
     https://github.com/ACCESS-NRI/MOM6/blob/569ba3126835bfcdea5e39c46eeae01938f5413c/src/initialization/MOM_grid_initialize.F90#L1180
