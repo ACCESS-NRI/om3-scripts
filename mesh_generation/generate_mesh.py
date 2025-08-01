@@ -48,7 +48,7 @@ from scripts_common import get_provenance_metadata, md5sum
 EARTH_R = 6.37122e6
 
 
-def mom6_mask_detection(ds, minimum_depth=0.0, masking_depth=None):
+def mom6_mask_detection(ds, minimum_depth=None, masking_depth=None):
     """
     Detect and generate an ocean mask (1 = wet, 0 = land) from a topog.nc.
     https://github.com/ACCESS-NRI/MOM6/blob/569ba3126835bfcdea5e39c46eeae01938f5413c/src/initialization/MOM_grid_initialize.F90#L1180
@@ -62,14 +62,17 @@ def mom6_mask_detection(ds, minimum_depth=0.0, masking_depth=None):
     # topog contains nans
     is_wet = ~np.isnan(depth)
 
-    if masking_depth is None:
+    if masking_depth is None and minimum_depth is None:
+        mask = is_wet
+    elif masking_depth is None:
         mask = (depth > minimum_depth) & is_wet
+    elif minimum_depth is None:
+        mask = (depth > masking_depth) & is_wet
     else:
         if masking_depth > minimum_depth:
             raise ValueError(
                 "MASKING_DEPTH must be less than or equal to MINIMUM_DEPTH!"
             )
-
         mask = (depth > masking_depth) & is_wet
 
     return mask.astype(np.int8).values.flatten()
@@ -525,7 +528,7 @@ def main():
         default=None,
         help=(
             "MASKING_DEPTH in metres. If set, cells with depth <= MASKING_DEPTH "
-            "become land, while cells with MASKING_DEPTH <= depth < MINIMUM_DEPTH remain wet "
+            "become land, while cells with MASKING_DEPTH < depth < MINIMUM_DEPTH remain wet "
             "but their depth will be raised to MINIMUM_DEPTH at runtime.  "
             "If omitted, MINIMUM_DEPTH alone controls the land-sea mask."
         ),
