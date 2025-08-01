@@ -518,9 +518,9 @@ def main():
     parser.add_argument(
         "--minimum-depth",
         type=float,
-        default=0,
+        default=None,
         help=(
-            "MINIMUM_DEPTH in metres (default 0). When a topography file is"
+            "MINIMUM_DEPTH in metres. When a topography file is"
             "provided, any grid cell with depth <= MINIMUM_DEPTH is treated as land "
             "unless --masking-depth is also supplied."
         ),
