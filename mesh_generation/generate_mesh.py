@@ -510,7 +510,10 @@ def main():
         "--topog-filename",
         type=str,
         default=None,
-        help="The path to a netcdf file specifying the topog. If not passed, no mask is set in the mesh.",
+        help=(
+            "Path to a netcdf file containing the topography ('topog.nc'), "
+            "used to generate the ocean land-sea mask. "
+            "If not provided, no mask will be included in the mesh.",
     )
     parser.add_argument(
         "--minimum-depth",
