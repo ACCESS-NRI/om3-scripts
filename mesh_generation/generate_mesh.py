@@ -514,13 +514,14 @@ def main():
             "Path to a netcdf file containing the topography ('topog.nc'), "
             "used to generate the ocean land-sea mask. "
             "If not provided, no mask will be included in the mesh.",
+        ),
     )
     parser.add_argument(
         "--minimum-depth",
         type=float,
         default=None,
         help=(
-            "MINIMUM_DEPTH in metres. When a topography file is"
+            "MINIMUM_DEPTH in metres. When a topography file is "
             "provided, any grid cell with depth <= MINIMUM_DEPTH is treated as land "
             "unless --masking-depth is also supplied."
         ),
