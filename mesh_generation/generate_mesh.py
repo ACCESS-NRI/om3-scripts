@@ -241,7 +241,7 @@ class MomSuperGrid(BaseGrid):
         lon_name=None,
         lat_name=None,
         area_name=None,
-        minimum_depth=0,
+        minimum_depth=None,
         masking_depth=None,
     ):
         """
@@ -260,7 +260,7 @@ class MomSuperGrid(BaseGrid):
         area_name: str, optional
             The name of the area variable if one exists. Default is "area"
         minimum_depth: float, optional
-            The name of the minimum depth. Default is 0
+            The name of the minimum depth. Default is None
         masking_depth: float, optional
             The name of the masking depth. Default is None
         """
@@ -333,7 +333,7 @@ class LatLonGrid(BaseGrid):
         lon_name=None,
         lat_name=None,
         area_name=None,
-        minimum_depth=0,
+        minimum_depth=None,
         masking_depth=None,
     ):
         """
