@@ -208,6 +208,8 @@ def update_tideamp(tideamp: xr.DataArray) -> xr.DataArray:
     """
     tideamp = tideamp.drop_vars(["lon_b", "lat_b", "mask"])
 
+    tideamp = tideamp.expand_dims({"time": [0]})
+
     tideamp_attrs = {
         "lon": {
             "long_name": "Longitude",
@@ -300,7 +302,7 @@ def main():
     global_attrs["inputFile"] = ", ".join(file_hashes)
     tideamp.attrs.update(global_attrs)
 
-    tideamp.to_netcdf(args.output)
+    tideamp.to_netcdf(args.output, unlimited_dims=["time"])
     print(f"Complete {args.output}!")
 
 
