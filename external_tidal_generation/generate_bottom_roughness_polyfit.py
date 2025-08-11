@@ -43,7 +43,9 @@ from scripts_common import get_provenance_metadata, md5sum
 from mesh_generation.generate_mesh import mom6_mask_detection
 
 
-def load_high_res_topo(path: str, chunk_lat: int = 800, chunk_lon: int = 1600) -> xr.DataArray:
+def load_high_res_topo(
+    path: str, chunk_lat: int = 800, chunk_lon: int = 1600
+) -> xr.DataArray:
     """
     Load a high-resolution bathymetry file
     """
