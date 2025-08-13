@@ -256,7 +256,7 @@ def main():
         "--high-res-topo-file",
         type=str,
         required=True,
-        help="Path to a high-resolution topography file.",
+        help="High-resolution source topography file (used to derive bottom roughness).",
     )
     parser.add_argument(
         "--hgrid-file", type=str, required=True, help="Path to ocean_hgrid.nc"
@@ -265,7 +265,7 @@ def main():
         "--topog-file",
         type=str,
         required=True,
-        help="Path to the model topography file, which is used to generate the mask.",
+        help="Path to the model topography file. All depths > 0 are ocean cells.",
     )
     parser.add_argument(
         "--chunk-lat",
