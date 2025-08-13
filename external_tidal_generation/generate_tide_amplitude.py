@@ -14,7 +14,7 @@
 # Usage:
 #    python3 generate_tide_amplitude.py \
 #       --hgrid-file /path/to/ocean_hgrid.nc \
-#       --mask-file /path/to/ocean_mask.nc \
+#       --topog-file /path/to/topog.nc \
 #       --data-path /path/to/TPXO10/ \
 #       --method  conservative_normed \
 #       --output  tideamp.nc
@@ -39,16 +39,11 @@ path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
 from scripts_common import get_provenance_metadata, md5sum
-
+from mesh_generation.generate_mesh import mom6_mask_detection
 
 PRIMARY_CONSTITUENTS = ["m2", "s2", "n2", "k2", "k1", "o1", "p1", "q1"]
-
-
-def load_dataset(path: Path) -> xr.Dataset:
-    """
-    Load an input dataset from a netcdf file.
-    """
-    return xr.open_dataset(path)
+TPXO10_GRIDFILE = "grid_tpxo10atlas_v2.nc"
+TPXO10_DATASUFFIX = "tpxo10_atlas_30_v2.nc"
 
 
 def interp_complex(arr, lon: xr.DataArray, lat: xr.DataArray) -> xr.DataArray:
@@ -73,7 +68,7 @@ def compute_constituent_speed(
     Barotropic speed amplitude (m/s) on centre points
     for a single tidal constituent.
     """
-    ds = load_dataset(trans_file)
+    ds = xr.open_dataset(trans_file)
 
     # complex transports from cm^2/s to m^2/s
     Uc = (ds.uRe + 1j * ds.uIm).astype("complex64") * 1e-4
@@ -121,7 +116,7 @@ def compute_tideamp(data_path: Path) -> xr.DataArray:
     Compute tidal amplitude (speed) from eight primary constituents
     """
     # TPXO10 grids
-    grid = load_dataset(data_path / "grid_tpxo10atlas_v2.nc")
+    grid = xr.open_dataset(data_path / TPXO10_GRIDFILE)
     # depth at u and v points
     hu = grid["hu"].where(grid["hu"] > 0)
     hv = grid["hv"].where(grid["hv"] > 0)
@@ -129,7 +124,7 @@ def compute_tideamp(data_path: Path) -> xr.DataArray:
     speed_sq_sum = None
 
     for cons in PRIMARY_CONSTITUENTS:
-        fname = data_path / f"u_{cons}_tpxo10_atlas_30_v2.nc"
+        fname = data_path / f"u_{cons}_{TPXO10_DATASUFFIX}"
         print(f"Processing {fname}...")
         speed = compute_constituent_speed(
             fname, hu, hv, grid.lon_z, grid.lat_z, grid.lon_u, grid.lat_v
@@ -164,7 +159,7 @@ def compute_tideamp(data_path: Path) -> xr.DataArray:
 
 def regrid(
     hgrid_path: Path,
-    mask_path: Path,
+    topog_path: Path,
     tideamp: xr.Dataset,
     method: str = "conservative_normed",
 ) -> xr.Dataset:
@@ -172,18 +167,19 @@ def regrid(
     Regrid tideamp onto the model grid using xesmf
     """
     # Load model grid
-    hgrid = load_dataset(hgrid_path)
+    hgrid = xr.open_dataset(hgrid_path)
     hgrid_x = hgrid.x[1::2, 1::2]
     hgrid_y = hgrid.y[1::2, 1::2]
     hgrid_xc = hgrid.x[::2, ::2]
     hgrid_yc = hgrid.y[::2, ::2]
 
-    # load model ocean mask
-    ocean_mask = load_dataset(mask_path)
+    # load topog.nc
+    topo = xr.open_dataset(topog_path)
+    mask = mom6_mask_detection(topo)
 
     # construct target dataset for tideamp
     target_ds = xr.Dataset(
-        data_vars={"mask": (("y", "x"), ocean_mask.mask.values)},
+        data_vars={"mask": (("y", "x"), mask)},
         coords={
             "lon": (("y", "x"), hgrid_x.values),
             "lat": (("y", "x"), hgrid_y.values),
@@ -240,10 +236,10 @@ def main():
         "--hgrid-file", type=str, required=True, help="Path to ocean_hgrid.nc"
     )
     parser.add_argument(
-        "--mask-file",
+        "--topog-file",
         type=str,
         required=True,
-        help="Path to the ocean mask file.",
+        help="Path to the model topography file, which is used to generate the mask.",
     )
     parser.add_argument(
         "--method",
@@ -271,7 +267,7 @@ def main():
 
     # Regrid tide amplitude onto the model grid
     tideamp = regrid(
-        Path(args.hgrid_file), Path(args.mask_file), tideamp_tmp, args.method
+        Path(args.hgrid_file), Path(args.topog_file), tideamp_tmp, args.method
     )
 
     # Remove boundary variables and update metadata to tideamp
@@ -285,7 +281,7 @@ def main():
     runcmd = (
         f"python3 {os.path.basename(this_file)} "
         f"--hgrid-file={args.hgrid_file} "
-        f"--mask-file={args.mask_file} "
+        f"--topog-file={args.topog_file} "
         f"--method={args.method} "
         f"--data-path={args.data_path} "
         f"--output={args.output} "
@@ -297,7 +293,7 @@ def main():
     # add md5 hashes for input files
     file_hashes = [
         f"{args.hgrid_file} (md5 hash: {md5sum(args.hgrid_file)})",
-        f"{args.mask_file} (md5 hash: {md5sum(args.mask_file)})",
+        f"{args.topog_file} (md5 hash: {md5sum(args.topog_file)})",
     ]
     global_attrs["inputFile"] = ", ".join(file_hashes)
     tideamp.attrs.update(global_attrs)

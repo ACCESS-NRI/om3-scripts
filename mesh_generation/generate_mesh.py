@@ -75,7 +75,7 @@ def mom6_mask_detection(ds, minimum_depth=None, masking_depth=None):
             )
         mask = (depth > masking_depth) & is_wet
 
-    return mask.astype(np.int8).values.flatten()
+    return mask.astype(np.int8).values
 
 
 class BaseGrid:
@@ -280,6 +280,7 @@ class MomSuperGrid(BaseGrid):
                 minimum_depth=minimum_depth,
                 masking_depth=masking_depth,
             )
+            mask = mask.flatten()
             inputs += [topog_filename]
         else:
             mask = None
@@ -351,6 +352,10 @@ class LatLonGrid(BaseGrid):
             The name of the latitude variable. An attempt will be made to guess the name if not passed.
         area_name: str, optional
             The name of the area variable if one exists. An attempt will be made to guess the name if not passed.
+        minimum_depth: float, optional
+            The name of the minimum depth. Default is None
+        masking_depth: float, optional
+            The name of the masking depth. Default is None
         """
 
         grid = xr.open_dataset(grid_filename, chunks=-1)
@@ -366,6 +371,7 @@ class LatLonGrid(BaseGrid):
                 minimum_depth=minimum_depth,
                 masking_depth=masking_depth,
             )
+            mask = mask.flatten()
             inputs += [topog_filename]
         else:
             mask = None
@@ -561,7 +567,6 @@ def main():
         default=None,
         help="The name of the area variable in the input grid. If not passed, an attempt will be made to guess the name.",
     )
-
     args = parser.parse_args()
     grid_type = args.grid_type
     wrap_lons = args.wrap_lons

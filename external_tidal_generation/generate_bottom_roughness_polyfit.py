@@ -13,9 +13,9 @@
 #
 # Usage:
 #    mpirun -n <ranks> python3 generate_bottom_roughness_polyfit.py \
-#         --topo-file /path/to/topog.nc \
+#         --high-res-topo-file /path/to/topo_high_res.nc \
 #         --hgrid-file /path/to/ocean_hgrid.nc \
-#         --mask-file /path/to/ocean_mask.nc \
+#         --topog-file /path/to/topog.nc \
 #         --chunk-lat chunk_lat
 #         --chunk-lon chunk_lon
 #         --output output.nc
@@ -40,9 +40,12 @@ path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
 from scripts_common import get_provenance_metadata, md5sum
+from mesh_generation.generate_mesh import mom6_mask_detection
 
 
-def load_topo(path: str, chunk_lat: int = 800, chunk_lon: int = 1600) -> xr.DataArray:
+def load_high_res_topo(
+    path: str, chunk_lat: int = 800, chunk_lon: int = 1600
+) -> xr.DataArray:
     """
     Load a high-resolution bathymetry file
     """
@@ -68,14 +71,6 @@ def align_lon_coords(da: xr.DataArray) -> xr.DataArray:
     da = da.sortby("lon")
 
     return da
-
-
-def load_dataset(path: str) -> xr.Dataset:
-    """
-    Load an input dataset.
-    """
-    ds = xr.open_dataset(path)
-    return ds
 
 
 def polyfit_roughness(H: np.ndarray, xv: np.ndarray, yv: np.ndarray) -> float:
@@ -120,7 +115,7 @@ def compute_hrms_poly_cell(
     lon_max: float,
     lat_min: float,
     lat_max: float,
-    topo_da: xr.DataArray,
+    topo_high_res: xr.DataArray,
 ) -> float:
     """
     Given bounding coordinates (lon_min, lon_max, lat_min, lat_max),
@@ -128,7 +123,7 @@ def compute_hrms_poly_cell(
     and fit a polynomial (H = a + b*x + c*y + d*x*y) to that
     sub-region.
     """
-    sub_da = topo_da.sel(
+    sub_da = topo_high_res.sel(
         lon=slice(lon_min, lon_max),
         lat=slice(lat_min, lat_max),
     )
@@ -150,7 +145,7 @@ def compute_hrms_poly_cell(
 
 
 def evaluate_roughness(
-    topo_da: xr.DataArray,
+    topo_high_res: xr.DataArray,
     ocean_mask: xr.DataArray,
     lon_b: np.ndarray,
     lat_b: np.ndarray,
@@ -208,7 +203,7 @@ def evaluate_roughness(
             lat_max = np.max(this_lat_corners)
 
             hrms_val = compute_hrms_poly_cell(
-                lon_min, lon_max, lat_min, lat_max, topo_da
+                lon_min, lon_max, lat_min, lat_max, topo_high_res
             )
             local_hrms[j - y_start, i] = hrms_val
 
@@ -258,19 +253,19 @@ def main():
         description="Compute bottom roughness via polynomial fit with a high-resolution topography."
     )
     parser.add_argument(
-        "--topo-file",
+        "--high-res-topo-file",
         type=str,
         required=True,
-        help="Path to a high-resolution topography file.",
+        help="High-resolution source topography file (used to derive bottom roughness).",
     )
     parser.add_argument(
         "--hgrid-file", type=str, required=True, help="Path to ocean_hgrid.nc"
     )
     parser.add_argument(
-        "--mask-file",
+        "--topog-file",
         type=str,
         required=True,
-        help="Path to the ocean mask file.",
+        help="Path to the model topography file. All depths > 0 are ocean cells.",
     )
     parser.add_argument(
         "--chunk-lat",
@@ -298,25 +293,25 @@ def main():
 
     if rank == 0:
         # Load high-resolution bathymetry ranging from [-180, 180]
-        topo_da = load_topo(
-            args.topo_file, chunk_lat=args.chunk_lat, chunk_lon=args.chunk_lon
+        topo_high_res = load_high_res_topo(
+            args.high_res_topo_file, chunk_lat=args.chunk_lat, chunk_lon=args.chunk_lon
         )
 
-        # Load ocean mask ranging from [-280, 80]
-        ocean_mask = load_dataset(args.mask_file)
+        # Load model topog file then generate ocean mask ranging from [-280, 80]
+        topo = xr.open_dataset(Path(args.topog_file))
+        mask = mom6_mask_detection(topo)
 
         # Convert lon coords to a [-280, 80] to match the range of the model grid
-        topo_da = align_lon_coords(topo_da)
+        topo_high_res = align_lon_coords(topo_high_res)
 
         # Load hgrid
-        hgrid = load_dataset(args.hgrid_file)
+        hgrid = xr.open_dataset(args.hgrid_file)
 
         # Get the boundary values of the model grid
         lon_b = hgrid.x[::2, ::2].values
         lat_b = hgrid.y[::2, ::2].values
         lon = hgrid.x[1::2, 1::2].values
         lat = hgrid.y[1::2, 1::2].values
-        ocean_ma = ocean_mask["mask"].values
 
         # Get dims of the model grid
         ny = lon.shape[0]
@@ -325,8 +320,8 @@ def main():
         print(f"[Rank 0] grid dimensions: {ny} cells in y, {nx} cells in x.")
 
     else:
-        topo_da = None
-        ocean_ma = None
+        topo_high_res = None
+        mask = None
         lon_b = None
         lat_b = None
         lon = None
@@ -335,17 +330,17 @@ def main():
         nx = None
 
     # Broadcast fields and grid sizes to all ranks.
-    topo_da = comm.bcast(topo_da, root=0)
+    topo_high_res = comm.bcast(topo_high_res, root=0)
     lon_b = comm.bcast(lon_b, root=0)
     lat_b = comm.bcast(lat_b, root=0)
-    ocean_ma = comm.bcast(ocean_ma, root=0)
+    mask = comm.bcast(mask, root=0)
     ny = comm.bcast(ny, root=0)
     nx = comm.bcast(nx, root=0)
 
     # Evaluate bottom roughness on the grid.
     final_hrms = evaluate_roughness(
-        topo_da=topo_da,
-        ocean_mask=ocean_ma,
+        topo_high_res=topo_high_res,
+        ocean_mask=mask,
         lon_b=lon_b,
         lat_b=lat_b,
         nx=nx,
@@ -391,9 +386,9 @@ def main():
         this_file = os.path.normpath(__file__)
         runcmd = (
             f"mpirun -n $PBS_NCPUS python3 {os.path.basename(this_file)} "
-            f"--topo-file={args.topo_file} "
+            f"--high-res-topo-file={args.high_res_topo_file} "
             f"--hgrid-file={args.hgrid_file} "
-            f"--mask-file={args.mask_file} "
+            f"--topog-file={args.topog_file} "
             f"--chunk-lat={args.chunk_lat} "
             f"--chunk-lon={args.chunk_lon} "
             f"--output={args.output}"
@@ -402,9 +397,9 @@ def main():
         history = get_provenance_metadata(this_file, runcmd)
         global_attrs = {"history": history}
         file_hashes = [
-            f"{args.topo_file} (md5 hash: {md5sum(args.topo_file)})",
+            f"{args.high_res_topo_file} (md5 hash: {md5sum(args.high_res_topo_file)})",
             f"{args.hgrid_file} (md5 hash: {md5sum(args.hgrid_file)})",
-            f"{args.mask_file} (md5 hash: {md5sum(args.mask_file)})",
+            f"{args.topog_file} (md5 hash: {md5sum(args.topog_file)})",
         ]
         global_attrs["inputFile"] = ", ".join(file_hashes)
         h2_out.attrs.update(global_attrs)
