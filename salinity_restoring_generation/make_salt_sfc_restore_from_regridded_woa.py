@@ -126,13 +126,15 @@ if __name__ == "__main__":
         description="Process and concatenate NetCDF files with smoothing."
     )
     parser.add_argument(
-        "input_path",
+        "--input_path",
         type=str,
+        required=True,
         help="Path to the directory containing input NetCDF files.",
     )
     parser.add_argument(
-        "output_path",
+        "--output_path",
         type=str,
+        required=True,
         help="Path to the directory where the output NetCDF file will be saved.",
     )
     args = parser.parse_args()
