@@ -199,7 +199,7 @@ def main():
         extrap_method="nearest_s2d",
         periodic=True,
     )
-    forcing_regrid = regridder(forcing_src)
+    forcing_regrid = regridder(forcing_src, keep_attrs=True)
 
     # Add coodinates and metadata required by data_table
     forcing_regrid = forcing_regrid.assign_coords(
