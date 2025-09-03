@@ -28,6 +28,7 @@ import os
 import sys
 from pathlib import Path
 
+import numpy as np
 import xarray as xr
 
 path_root = Path(__file__).parents[1]
@@ -101,6 +102,9 @@ def main():
 
     # Average all years (1980-2014)
     SFe_clim = SFe.mean("yrs").rename({"mon": "time"}).assign_coords({"time": times})
+    SFe_clim.SFe.attrs["cell_methods"] = (
+        "time: mean within months time: mean over years"
+    )
 
     # Update attributes
     SFe_clim.attrs["Title"] = (
@@ -111,10 +115,38 @@ def main():
     }
     SFe_clim.attrs |= history_attrs
 
+    # Add climatology_bounds
+    SFe_clim.time.attrs["climatology"] = "climatology_bounds"
+    start_times = xr.date_range(
+        start=str(int(SFe.yrs.min().item())),
+        periods=12,
+        freq="MS",
+        calendar=calendar,
+        use_cftime=True,
+    )
+    end_times = xr.date_range(
+        start=str(int(SFe.yrs.max().item())),
+        periods=13,
+        freq="MS",
+        calendar=calendar,
+        use_cftime=True,
+    )[1:]
+    climatology_bounds = xr.DataArray(
+        np.vstack((start_times, end_times)), dims=["nv", "time"]
+    )
+    SFe_clim = SFe_clim.assign_coords({"climatology_bounds": climatology_bounds})
+
     comp = dict(zlib=True, complevel=4)
     encoding = {var: comp for var in SFe_clim.data_vars}
     encoding |= {
-        "time": {"units": "days since 0001-01-01 00:00:00.000000", "calendar": calendar}
+        "time": {
+            "units": "days since 0001-01-01 00:00:00.000000",
+            "calendar": calendar,
+        },
+        "climatology_bounds": {
+            "units": "days since 0001-01-01 00:00:00.000000",
+            "calendar": calendar,
+        },
     }
     unlimited_dims = "time" if "time" in SFe_clim.dims else None
     SFe_clim.to_netcdf(
