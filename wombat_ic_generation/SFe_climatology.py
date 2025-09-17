@@ -85,7 +85,8 @@ def main():
     g_per_kg = 1000
     g_per_mol = 55.845
     SFe = g_per_kg / g_per_mol * ds[["SFe"]]
-    SFe.SFe.attrs["unit"] = "mol/m2/s"
+    SFe.SFe.attrs["units"] = "mol/m2/s"
+    del SFe.SFe.attrs["unit"]
 
     # Create time array at middle of month
     # FMS requires calendar to be one of: noleap, 365_day, 365_days, 360_day,
@@ -107,13 +108,21 @@ def main():
     )
 
     # Update attributes
-    SFe_clim.attrs["Title"] = (
+    SFe_clim.attrs["title"] = (
         "Monthly climatological (1980-2014) soluble iron and dust deposition"
     )
+    del SFe_clim.attrs["Title"]
     SFe_clim.attrs |= {
         "DOI": "https://doi.org/10.7298/xqqj-qk90 (file: CESM-MIMI_1980-2015_CAM4-6MEAN_MonthlyDep_Hamiltonetal2020.nc)",
     }
     SFe_clim.attrs |= history_attrs
+    SFe_clim.lon.attrs["standard_name"] = "longitude"
+    del SFe_clim.lon.attrs["name"]
+    SFe_clim.lat.attrs["standard_name"] = "latitude"
+    del SFe_clim.lat.attrs["name"]
+    SFe_clim.time.attrs["standard_name"] = "time"
+    SFe_clim.SFe.attrs["long_name"] = SFe_clim.SFe.attrs["name"]
+    del SFe_clim.SFe.attrs["name"]
 
     # Add climatology_bounds
     SFe_clim.time.attrs["climatology"] = "climatology_bounds"
@@ -132,7 +141,7 @@ def main():
         use_cftime=True,
     )[1:]
     climatology_bounds = xr.DataArray(
-        np.vstack((start_times, end_times)), dims=["nv", "time"]
+        np.vstack((start_times, end_times)).T, dims=["time", "nv"]
     )
     SFe_clim = SFe_clim.assign_coords({"climatology_bounds": climatology_bounds})
 
