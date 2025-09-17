@@ -138,20 +138,17 @@ def main():
 
     comp = dict(zlib=True, complevel=4)
     encoding = {var: comp for var in SFe_clim.data_vars}
-    encoding |= {
-        "time": {
-            "units": "days since 0001-01-01 00:00:00.000000",
-            "calendar": calendar,
-        },
-        "climatology_bounds": {
-            "units": "days since 0001-01-01 00:00:00.000000",
-            "calendar": calendar,
-        },
+    # Time coords should be double type according for CF conventions
+    time_encoding = {
+        "dtype": "float64",
+        "units": "days since 0001-01-01 00:00:00.000000",
+        "calendar": calendar,
     }
-    unlimited_dims = "time" if "time" in SFe_clim.dims else None
-    SFe_clim.to_netcdf(
-        output_filename, unlimited_dims=unlimited_dims, encoding=encoding
-    )
+    encoding |= {
+        "time": time_encoding,
+        "climatology_bounds": time_encoding,
+    }
+    SFe_clim.to_netcdf(output_filename, unlimited_dims="time", encoding=encoding)
 
 
 if __name__ == "__main__":
