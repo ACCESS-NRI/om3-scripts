@@ -213,8 +213,10 @@ def main():
         }
     )
     forcing_regrid["time"].attrs = dict(axis="T", standard_name="time", modulo="y")
-    forcing_regrid["ny"].attrs = dict(axis="Y")
-    forcing_regrid["nx"].attrs = dict(axis="X")
+    # Both axis and cartesian_axis attributes are required to work with recent (MOM6-era) and older
+    # (MOM5-era) versions of FMS
+    forcing_regrid["ny"].attrs = dict(axis="Y", cartesian_axis="Y")
+    forcing_regrid["nx"].attrs = dict(axis="X", cartesian_axis="X")
     forcing_regrid["lat"].attrs = dict(
         long_name="Latitude of T-cell center",
         standard_name="latitude",
@@ -228,8 +230,14 @@ def main():
     forcing_regrid.attrs = forcing_regrid.attrs | global_attrs
 
     # Save output
-    comp = dict(zlib=True, complevel=4)
-    encoding = {var: comp for var in forcing_regrid.data_vars}
+    # _FillValue is required by older (MOM5-era) versions of FMS
+    var_encoding = dict(zlib=True, complevel=4, _FillValue=-1.0e36)
+    encoding = {var: var_encoding for var in forcing_regrid.data_vars}
+    # Older (MOM5-era) versions of FMS can't handle integer type dimensions
+    encoding |= {
+        "nx": {"dtype": "float32"},
+        "ny": {"dtype": "float32"},
+    }
     unlimited_dims = "time" if "time" in forcing_regrid.dims else None
     forcing_regrid.to_netcdf(
         output_filename, unlimited_dims=unlimited_dims, encoding=encoding
