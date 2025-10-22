@@ -55,8 +55,7 @@ def smooth2d(src):
     return dest[ws:-ws, :]
 
 
-def main(input_path, output_path):
-    variable_to_smooth = "salt"
+def main(input_path, variable_to_smooth, output_path):
 
     file_template = f"{input_path}/woa23_ts_{{:02d}}_mom.nc"
 
@@ -81,9 +80,9 @@ def main(input_path, output_path):
 
     salt_smoothed_da = salt_smoothed_da.assign_attrs(
         {
-            "standard_name": "sea_water_salinity",
-            "long_name": "Smoothed sea water salinity at level 0m",
-            "units": "1e-3",
+            "standard_name": salt_da.attrs["standard_name"],
+            "long_name": f"{salt_da.attrs['long_name']} at 0m",
+            "units": salt_da.attrs["units"],
         }
     )
 
@@ -96,7 +95,7 @@ def main(input_path, output_path):
 
     # Check git status of this .py file
     this_file = os.path.normpath(__file__)
-    runcmd = f"python3 {os.path.basename(this_file)} --input_path {input_path} --output_path {output_path}"
+    runcmd = f"python3 {os.path.basename(this_file)} --input_path={input_path} --salt_var={variable_to_smooth} --output_path={output_path}"
     salt_ds = salt_ds.assign_attrs(
         {
             "history": get_provenance_metadata(this_file, runcmd),
@@ -132,6 +131,12 @@ if __name__ == "__main__":
         help="Path to the directory containing input NetCDF files.",
     )
     parser.add_argument(
+        "--salt_var",
+        type=str,
+        required=True,
+        help="The name of the salt variable to process.",
+    )
+    parser.add_argument(
         "--output_path",
         type=str,
         required=True,
@@ -139,4 +144,4 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    main(args.input_path, args.output_path)
+    main(args.input_path, args.salt_var, args.output_path)
