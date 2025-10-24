@@ -16,14 +16,17 @@ The script creates an output file 'salt_sfc_restore.nc' which contains the smoot
 and concatenated salinity data for 12 months.
 
 Usage:
-    python make_salt_sfc_restore_from_regridded_woa.py <input_directory> <output_directory>
+    python make_salt_sfc_restore_from_regridded_woa.py --input_path=<input_directory>
+    --salt_var=<salt_var_name> --output_path=<output_directory>
 
 Example:
-    python make_salt_sfc_restore_from_regridded_woa.py /path/to/input/dir /path/to/output/dir
+    python make_salt_sfc_restore_from_regridded_woa.py --input_path=/path/to/input/dir
+    --salt_var=asalt --output_path=/path/to/output/dir
 
 Command-line arguments:
-    - input_directory: The directory containing the initial conditions NetCDF files.
-    - output_directory: The directory where the output smoothed and concatenated NetCDF file will be saved.
+    - input_path: The directory containing the initial conditions NetCDF files.
+    - salt_var: The name of the salt variable to process.
+    - output_path: The directory where the output smoothed and concatenated NetCDF file will be saved.
 """
 
 import xarray as xr
