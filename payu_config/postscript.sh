@@ -5,7 +5,7 @@
 #PBS -l ncpus=104
 #PBS -l mem=500GB
 #PBS -l jobfs=100GB
-#PBS -q expresssr
+#PBS -q normalsr
 #PBS -l walltime=00:30:00
 #PBS -l wd
 #PBS -j oe
