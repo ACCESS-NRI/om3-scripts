@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2023 ACCESS-NRI and contributors. See the top-level COPYRIGHT file for details.
+# Copyright 2025 ACCESS-NRI and contributors. See the top-level COPYRIGHT file for details.
 # SPDX-License-Identifier: Apache-2.0
 
 # Generate a datm xml file that contains a time-series of input atmosphere data files where all the fields in the stream are located.
@@ -121,9 +121,11 @@ for stream_name in stream_info_names:
     if stream_name == "JRA55do.SWDN":
         SubElement(stream_info, "offset").text = "-5400"
         SubElement(stream_info, "tintalgo").text = "coszen"
+        file_year_last = year_last + 1  # include midnight Dec 31
     else:
         SubElement(stream_info, "offset").text = "0"
         SubElement(stream_info, "tintalgo").text = "linear"
+        file_year_last = year_last
 
     var_name_parts = var_names.get(
         stream_name,
@@ -135,13 +137,14 @@ for stream_name in stream_info_names:
     var_element = SubElement(datavars, "var")
     var_element.text = f"{var_name_parts[0]}  {var_name_parts[1]}"
 
-    for year in range(year_first, year_last + 1):
-        if year_first == year_last:
-            file_element = SubElement(datafiles, "file")
-            file_element.text = (
-                f"./INPUT/RYF.{var_name_parts[0]}.{year+90}_{year + 90 + 1}.nc"
-            )
-        else:
+    if year_first == year_last:
+        file_element = SubElement(datafiles, "file")
+        file_element.text = (
+            f"./INPUT/RYF.{var_name_parts[0]}.{year+90}_{year + 90 + 1}.nc"
+        )
+    else:
+        for year in range(year_first, file_year_last + 1):
+
             file_element = SubElement(datafiles, "file")
 
             if source_data == "jra55v1p4":
