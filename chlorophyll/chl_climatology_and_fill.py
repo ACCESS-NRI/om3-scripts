@@ -128,7 +128,7 @@ def fill_missing_data(field, wet_mask, maxiter=0):
     # Fill the missing values
     field[missing_j, missing_i] = x
 
-    return field
+    return np.where(wet_mask, field, np.NaN)
 
 
 def main():
@@ -192,13 +192,25 @@ def main():
         chl_month = chl["CHL"].sel(month=month)
 
         # Create land mask, eroded to ensure we have values at wet cells near coasts
-        land = regionmask.defined_regions.natural_earth_v5_0_0.land_110.mask(chl_month)
-        land_eroded = ndimage.binary_erosion(land == 0.0, structure=np.ones((100, 100)))
+        land = (
+            regionmask.defined_regions.natural_earth_v5_0_0.land_110.mask(
+                chl_month
+            ).values
+            == 0.0
+        )
+        land_eroded = ndimage.binary_erosion(land, structure=np.ones((100, 100)))
 
         # Remove chl values on land
-        chl_month = chl_month.where(land != 0.0).values
+        chl_month = chl_month.where(np.logical_not(land)).values
+
+        # Fill missing values in two steps. First, fill the missing wet cells, then
+        # the eroded land areas. If this is done in one step, high CHL values near
+        # the coast have a larger weighting leading to larger values in high latitude
+        # filled regions.
+        chl_filled = fill_missing_data(chl_month, 1.0 - land)
+
         chl["CHL"].sel(month=month).values[:] = fill_missing_data(
-            chl_month, 1.0 - land_eroded
+            chl_filled, 1.0 - land_eroded
         )
 
     # Add time array
@@ -214,7 +226,7 @@ def main():
     chl = chl.rename({"month": "time"}).assign_coords({"time": times})
 
     # Add climatology_bounds
-    chl.CHL.attrs["cell_methods"] = "time: mean within months time: mean over years"
+    chl.CHL.attrs["cell_methods"] = "time: mean within years time: mean over years"
     chl.time.attrs["climatology"] = "climatology_bounds"
     start_times = xr.date_range(
         start=ds.time.min().item(),
@@ -231,7 +243,13 @@ def main():
         use_cftime=True,
     ).shift(1, "MS")
     climatology_bounds = xr.DataArray(
-        np.vstack((start_times, end_times)).T, dims=["time", "nv"]
+        np.vstack(
+            (
+                start_times.sort_values(key=lambda x: x.month),
+                end_times.sort_values(key=lambda x: x.month),
+            )
+        ).T,
+        dims=["time", "nv"],
     )
     chl = chl.assign_coords({"climatology_bounds": climatology_bounds})
 
