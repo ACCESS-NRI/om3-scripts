@@ -176,7 +176,10 @@ def main():
 
     with Client(threads_per_worker=1) as client:
         ds = xr.open_mfdataset(
-            input_files, chunks={"lat": 1024, "lon": 1024}, parallel=True
+            input_files,
+            chunks={"lat": 1024, "lon": 1024},
+            parallel=True,
+            use_cftime=True,
         )
         chl = ds[["CHL"]].groupby("time.month").mean("time").compute()
 
@@ -201,7 +204,7 @@ def main():
     # Add time array
     calendar = "gregorian"
     times = xr.date_range(
-        start="0001",
+        start=str(int(ds.time.dt.year.median())),
         periods=13,
         freq="MS",
         calendar=calendar,
@@ -210,22 +213,51 @@ def main():
     times = times[:-1] + times.diff()[1:] / 2  # Middle of the month
     chl = chl.rename({"month": "time"}).assign_coords({"time": times})
 
+    # Add climatology_bounds
+    chl.CHL.attrs["cell_methods"] = "time: mean within months time: mean over years"
+    chl.time.attrs["climatology"] = "climatology_bounds"
+    start_times = xr.date_range(
+        start=ds.time.min().item(),
+        periods=12,
+        freq="MS",
+        calendar=calendar,
+        use_cftime=True,
+    )
+    end_times = xr.date_range(
+        end=ds.time.max().item(),
+        periods=12,
+        freq="MS",
+        calendar=calendar,
+        use_cftime=True,
+    ).shift(1, "MS")
+    climatology_bounds = xr.DataArray(
+        np.vstack((start_times, end_times)).T, dims=["time", "nv"]
+    )
+    chl = chl.assign_coords({"climatology_bounds": climatology_bounds})
+
     # Add attrs and save
+    del chl.CHL.attrs["ancillary_variables"]
     chl.attrs["title"] = (
         "Global ocean surface Chlorophyll-a concentration filled monthly climatology"
     )
     chl.time.attrs["long_name"] = "Time"
     chl.time.attrs["standard_name"] = "time"
+    chl.time.attrs["axis"] = "T"
     chl.attrs |= history_attrs
     comp = dict(zlib=True, complevel=4)
     encoding = {var: comp for var in chl.data_vars}
     # Time coords should be double type according for CF conventions
+    time_encoding = {
+        "dtype": "float64",
+        "units": "days since 0001-01-01 00:00:00.000000",
+        "calendar": calendar,
+        "_FillValue": None,
+    }
     encoding |= {
-        "time": {
-            "dtype": "float64",
-            "units": "days since 0001-01-01 00:00:00.000000",
-            "calendar": calendar,
-        }
+        "time": time_encoding,
+        "climatology_bounds": time_encoding,
+        "lat": {"_FillValue": None},
+        "lon": {"_FillValue": None},
     }
 
     chl.to_netcdf(output_filename, unlimited_dims="time", encoding=encoding)
