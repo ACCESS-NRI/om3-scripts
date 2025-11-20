@@ -170,6 +170,10 @@ def main():
     if mask_filename:
         forcing_mask = xr.open_dataset(mask_filename).compute()
 
+    # Drop "mask" variable from forcing_src if it exists
+    if "mask" in forcing_src:
+        forcing_src = forcing_src.drop_vars("mask")
+
     # Standardise lon/lat coordinate names
     if not lon_name:
         lon_name = _guess_longitude_name(forcing_src)
@@ -183,7 +187,12 @@ def main():
     grid_src = forcing_src[["lon", "lat"]]
     if mask_filename:
         # Add the mask to the source grid so that land values are extrapolated
-        grid_src = grid_src.assign(forcing_mask)
+        if "mask" in forcing_mask:
+            grid_src = grid_src.assign(mask=forcing_mask["mask"])
+        else:
+            raise ValueError(
+                f"Input mask-filename must contain a variable named 'mask'"
+            )
 
     # Destination grid is tracer cell centres
     lon_dest = hgrid["x"][1:-1:2, 1:-1:2].to_dataset(name="lon")
