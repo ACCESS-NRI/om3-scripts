@@ -185,20 +185,17 @@ def main():
 
     print("Filling missing data...")
 
+    # Create land mask, eroded to ensure we have values at wet cells near coasts
+    land = (
+        regionmask.defined_regions.natural_earth_v5_0_0.land_110.mask(chl).values == 0.0
+    )
+    land_eroded = ndimage.binary_erosion(land, structure=np.ones((200, 200)))
+
     # Fill missing data for each month
     for month in range(1, 13):
         print(f"  Filling month {month}...")
 
         chl_month = chl["CHL"].sel(month=month)
-
-        # Create land mask, eroded to ensure we have values at wet cells near coasts
-        land = (
-            regionmask.defined_regions.natural_earth_v5_0_0.land_110.mask(
-                chl_month
-            ).values
-            == 0.0
-        )
-        land_eroded = ndimage.binary_erosion(land, structure=np.ones((100, 100)))
 
         # Remove chl values on land
         chl_month = chl_month.where(np.logical_not(land)).values
