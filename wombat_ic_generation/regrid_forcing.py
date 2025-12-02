@@ -241,16 +241,17 @@ def main():
     # Save output
     # _FillValue is required by older (MOM5-era) versions of FMS
     var_encoding = dict(zlib=True, complevel=4, _FillValue=-1.0e36)
-    encoding = {var: var_encoding for var in forcing_regrid.data_vars}
+    for var in forcing_regrid.data_vars:
+        forcing_regrid[var].encoding |= var_encoding
+    # Coordinates should not have _FillValue
+    coord_encoding = dict(_FillValue=None)
+    for coord in forcing_regrid.coords:
+        forcing_regrid[coord].encoding |= coord_encoding
     # Older (MOM5-era) versions of FMS can't handle integer type dimensions
-    encoding |= {
-        "nx": {"dtype": "float32"},
-        "ny": {"dtype": "float32"},
-    }
+    forcing_regrid["nx"].encoding |= {"dtype": "float32"}
+    forcing_regrid["ny"].encoding |= {"dtype": "float32"}
     unlimited_dims = "time" if "time" in forcing_regrid.dims else None
-    forcing_regrid.to_netcdf(
-        output_filename, unlimited_dims=unlimited_dims, encoding=encoding
-    )
+    forcing_regrid.to_netcdf(output_filename, unlimited_dims=unlimited_dims)
 
 
 if __name__ == "__main__":
