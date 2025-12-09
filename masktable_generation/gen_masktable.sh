@@ -139,13 +139,20 @@ cp "${OCEAN_TOPOG}" "${TOPOG_FILE}"
 ncap2 -s 'defdim("ntiles",1)' -A "${TOPOG_FILE}" "${TOPOG_FILE}"
 
 # Generate ocean mosaic
-make_solo_mosaic \
-    --num_tiles 1 \
-    --dir . \
-    --mosaic_name ocean_mosaic \
-    --tile_file "${HGRID_FILE}" \
-    --periodx "${PERIODX}" \
-    --periody "${PERIODY}"
+msg=(
+    --num_tiles 1
+    --dir .
+    --mosaic_name ocean_mosaic
+    --tile_file "${HGRID_FILE}"
+    --periodx "${PERIODX}"
+)
+
+# Only append --periody if user explicitly provided -y
+if [[ -n "${PERIODY}" ]]; then
+    msg+=(--periody "${PERIODY}")
+fi
+
+make_solo_mosaic "${msg}"
 
 # Generate exchange grids
 make_quick_mosaic \
