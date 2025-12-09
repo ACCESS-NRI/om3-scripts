@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # This script generates masktables for MOM5/MOM6.
-# Help is available by running the script with `./gen_masktable.sh -h`.
+# Help is available by running:
+# `./gen_masktable.sh -h`.
 #
 # For more details, see https://github.com/COSIMA/mom6-panan/wiki/Preparing-inputs-for-a-new-configuration
 
@@ -13,24 +14,23 @@ set -euo pipefail
 Help() {
     echo "Generate MOM6 mask tables."
     echo
-    echo "Syntax: $(basename "$0") -g HGRID -t TOPOG [-e -l X:Y] [-r MIN:MAX] [-h]"
+    echo "Syntax: $(basename "$0") -g HGRID -t TOPOG [-l X Y] [-r MIN MAX] [-h]"
+    echo
+    echo "  -h   Show this help message"
     echo
     echo "Required arguments:"
     echo "  -g   Path to ocean_hgrid.nc"
     echo "  -t   Path to ocean_topog.nc"
     echo
-    echo "Mode selection (one of the following):"
-    echo "  -e            Enable EXACT_LAYOUT mode (default)"
-    echo "  -l X:Y        Layout dimensions when EXACT_LAYOUT=True"
+    echo "Mode selection (exactly one of):"
+    echo "  -l X Y        Use an exact layout of X by Y processors and generate mask table"
     echo
-    echo "  -r MIN:MAX    Use min/max PE range (sets EXACT_LAYOUT=False)"
+    echo "  -r MIN MAX    Search over PE range [MIN, MAX] and generate mask tables"
     echo
-    echo "  -x PERIODX     Period in the x-direction (default: 360)"
+    echo "Optional:"
+    echo "  -x PERIODX    Period in the x-direction (default: 360)"
     echo
-    echo "  -y PERIODY     Period in the y-direction (default: 360)"
-    echo
-    echo "Other:"
-    echo "  -h            Show this help message"
+    echo "  -y PERIODY    Period in the y-direction (optional; default is aperiodic)"
     echo
     echo "Examples:"
     echo "  # Exact layout mode (default)"
@@ -44,9 +44,10 @@ Help() {
 # default settings
 EXACT_LAYOUT=True
 PERIODX=360
-PERIODY=360
+PERIODY=""   # no periody by default (aperiodic in y)
 LAYOUT_X=""
 LAYOUT_Y=""
+MODE=""      # "layout" or "range"
 MIN_PROCESSORS=""
 MAX_PROCESSORS=""
 OCEAN_HGRID=""
@@ -65,14 +66,14 @@ while getopts ":hg:t:l:r:x:y:" option; do
             ;;
         # EXACT layout mode: -l X Y
         l)
-            EXACT_LAYOUT=True
+            MODE="layout"
             LAYOUT_X="${OPTARG}"
             LAYOUT_Y="${!OPTIND}"
             OPTIND=$((OPTIND + 1))
             ;;
         # PE range mode: -r MIN MAX
         r)
-            EXACT_LAYOUT=False
+            MODE="range"
             MIN_PROCESSORS="${OPTARG}"
             MAX_PROCESSORS="${!OPTIND}"
             OPTIND=$((OPTIND + 1))
@@ -97,18 +98,23 @@ done
 # load modules
 module use /g/data/vk83/modules
 module load model-tools/fre-nctools/2024.05-1
+module load nco
 
 # Required inputs - hgrid.nc and topog.nc
 : "${OCEAN_HGRID:?ERROR: -g HGRID is required}"
 : "${OCEAN_TOPOG:?ERROR: -t TOPOG is required}"
 
-# Exact layout or PE range mode
-if [[ "${EXACT_LAYOUT}" == "True" ]]; then
-    : "${LAYOUT_X:?ERROR: -l X Y requires two arguments}"
-    : "${LAYOUT_Y:?ERROR: -l X Y requires two arguments}"
-else
-    : "${MIN_PROCESSORS:?ERROR: -r MIN MAX requires two arguments}"
-    : "${MAX_PROCESSORS:?ERROR: -r MIN MAX requires two arguments}"
+if [[ -z "${MODE}" ]]; then
+    echo "ERROR: You must specify exactly one of -l X Y (layout) or -r MIN MAX (PE range)." >&2
+    exit 1
+fi
+
+if [[ "${MODE}" == "layout" ]]; then
+    : "${LAYOUT_X:?ERROR: -l X Y requires two arguments (X and Y).}"
+    : "${LAYOUT_Y:?ERROR: -l X Y requires two arguments (X and Y).}"
+elif [[ "${MODE}" == "range" ]]; then
+    : "${MIN_PROCESSORS:?ERROR: -r MIN MAX requires two arguments (MIN and MAX).}"
+    : "${MAX_PROCESSORS:?ERROR: -r MIN MAX requires two arguments (MIN and MAX).}"
 fi
 
 HGRID_FILE=$(basename "${OCEAN_HGRID}")
@@ -148,7 +154,7 @@ make_quick_mosaic \
     --ocean_topog "${TOPOG_FILE}"
 
 # Generate masktable(s)
-if [[ "${EXACT_LAYOUT}" == "True" ]]; then
+if [[ "${MODE}" == "layout" ]]; then
     echo "-- Running check_mask with layout ${LAYOUT_X},${LAYOUT_Y}"
     check_mask \
         --grid_file ocean_mosaic.nc \
