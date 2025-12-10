@@ -126,7 +126,7 @@ class BaseGrid:
 
         self.mesh = None
 
-    def create_mesh(self, wrap_lons=False, global_attrs=None):
+    def create_mesh(self, wrap_lons=True, global_attrs=None):
         """
         Create the mesh as an xarray Dataset
 
@@ -502,7 +502,7 @@ def main():
     )
     parser.add_argument(
         "--wrap-lons",
-        default=False,
+        default=True,
         action="store_true",
         help="Wrap longitude values into the range between 0 and 360.",
     )
