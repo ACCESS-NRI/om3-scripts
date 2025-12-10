@@ -152,7 +152,7 @@ if [[ -n "${PERIODY}" ]]; then
     msg+=(--periody "${PERIODY}")
 fi
 
-make_solo_mosaic "${msg}"
+make_solo_mosaic "${msg[@]}"
 
 # Generate exchange grids
 make_quick_mosaic \
