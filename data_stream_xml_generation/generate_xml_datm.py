@@ -104,7 +104,11 @@ for stream_name in stream_info_names:
             SubElement(stream_info, "dtlimit").text = "1.0"
 
     SubElement(stream_info, "readmode").text = "single"
-    SubElement(stream_info, "mapalgo").text = "bilinear"
+    if stream_name in STREAMS_AVE:
+        SubElement(stream_info, "mapalgo").text = "consf"
+    else:
+        SubElement(stream_info, "mapalgo").text = "patch"
+
     SubElement(stream_info, "year_first").text = str(year_first)
     SubElement(stream_info, "year_last").text = str(year_last)
     SubElement(stream_info, "year_align").text = str(year_align)
