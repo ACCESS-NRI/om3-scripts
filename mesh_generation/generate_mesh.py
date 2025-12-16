@@ -126,7 +126,7 @@ class BaseGrid:
 
         self.mesh = None
 
-    def create_mesh(self, wrap_lons=False, global_attrs=None):
+    def create_mesh(self, wrap_lons=True, global_attrs=None):
         """
         Create the mesh as an xarray Dataset
 
@@ -502,8 +502,9 @@ def main():
     )
     parser.add_argument(
         "--wrap-lons",
-        default=False,
-        action="store_true",
+        type=str,
+        choices=["True", "False"],
+        default="True",
         help="Wrap longitude values into the range between 0 and 360.",
     )
     parser.add_argument(
@@ -519,7 +520,7 @@ def main():
         help=(
             "Path to a netcdf file containing the topography ('topog.nc'), "
             "used to generate the ocean land-sea mask. "
-            "If not provided, no mask will be included in the mesh.",
+            "If not provided, no mask will be included in the mesh."
         ),
     )
     parser.add_argument(
@@ -569,7 +570,13 @@ def main():
     )
     args = parser.parse_args()
     grid_type = args.grid_type
-    wrap_lons = args.wrap_lons
+
+    # convert wrap_lons from str to bool
+    if args.wrap_lons == "False":
+        wrap_lons = False
+    else:
+        wrap_lons = True
+
     grid_filename = os.path.abspath(args.grid_filename)
     mesh_filename = os.path.abspath(args.mesh_filename)
     topog_filename = args.topog_filename
@@ -595,8 +602,7 @@ def main():
             runcmd += f" --minimum-depth={minimum_depth}"
         if masking_depth:
             runcmd += f" --masking-depth={masking_depth}"
-    if wrap_lons:
-        runcmd += f" --wrap-lons"
+    runcmd += f" --wrap-lons={wrap_lons}"
     if lon_name:
         runcmd += f" --lon-name={lon_name}"
     if lat_name:
