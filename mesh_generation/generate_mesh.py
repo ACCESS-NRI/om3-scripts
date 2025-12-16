@@ -520,7 +520,7 @@ def main():
         help=(
             "Path to a netcdf file containing the topography ('topog.nc'), "
             "used to generate the ocean land-sea mask. "
-            "If not provided, no mask will be included in the mesh.",
+            "If not provided, no mask will be included in the mesh."
         ),
     )
     parser.add_argument(
