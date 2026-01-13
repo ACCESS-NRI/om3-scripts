@@ -34,7 +34,7 @@ def compute_lambda(
     f = coriolis_f(lat)
     H = xr.where(N2 > omega**2, 1, 0)
     integrand = np.sqrt((N2 - omega**2) / np.abs(omega**2 - f**2) * H)
-    npi_on_K = (integrand*dz).sum(dim="depth_mid", skipna=True)
+    npi_on_K = (integrand * dz).sum(dim="depth_mid", skipna=True)
     lambda1 = 2 * npi_on_K
     lambda1.name = "lambda1"
 
@@ -47,6 +47,7 @@ class PolarWeights:
     The depth seen by a "mode 1" internal tide at polar coords (r, theta)
     around a point with Gaussian weights.
     """
+
     r: np.ndarray
     cos_t: np.ndarray
     sin_t: np.ndarray
@@ -55,15 +56,15 @@ class PolarWeights:
 
     @classmethod
     def build(cls, nmodes: int, ntheta: int):
-        nr = 2*nmodes+1
+        nr = 2 * nmodes + 1
         r = np.linspace(-1, 1, nr)
-        theta = np.linspace(0, 2*np.pi, ntheta, endpoint=False)
+        theta = np.linspace(0, 2 * np.pi, ntheta, endpoint=False)
 
         cos_t = np.cos(theta)[None, :]
         sin_t = np.sin(theta)[None, :]
         r_col = r[:, None]
 
-        weight = np.exp(-(2*r_col)**2)*(2*np.pi)*np.abs(r_col)
+        weight = np.exp(-((2 * r_col) ** 2)) * (2 * np.pi) * np.abs(r_col)
         weight = np.broadcast_to(weight, (nr, ntheta))
 
         return cls(
@@ -81,13 +82,13 @@ def bilinear_interp(field, lon0, lat0, dres, lon_x, lat_y):
     """
     ny, nx = field.shape
 
-    ix = (lon_x-lon0) / dres
-    iy = (lat_y-lat0) / dres
+    ix = (lon_x - lon0) / dres
+    iy = (lat_y - lat0) / dres
 
     ix0 = np.floor(ix).astype(np.int64)
     iy0 = np.floor(iy).astype(np.int64)
-    ix1 = ix0+1
-    iy1 = iy0+1
+    ix1 = ix0 + 1
+    iy1 = iy0 + 1
 
     inside = (ix0 >= 0) & (ix1 < nx) & (iy0 >= 0) & (iy1 < ny)
     out = np.full(lon_x.shape, np.nan)
@@ -107,7 +108,9 @@ def bilinear_interp(field, lon0, lat0, dres, lon_x, lat_y):
     v_ul = field[iy1f, ix0f]
     v_ur = field[iy1f, ix1f]
 
-    finite = np.isfinite(v_ll) & np.isfinite(v_lr) & np.isfinite(v_ul) & np.isfinite(v_ur)
+    finite = (
+        np.isfinite(v_ll) & np.isfinite(v_lr) & np.isfinite(v_ul) & np.isfinite(v_ur)
+    )
     if not np.any(finite):
         return out
 
@@ -116,10 +119,10 @@ def bilinear_interp(field, lon0, lat0, dres, lon_x, lat_y):
 
     # manual bilinear interpolation to minimise overhead
     interp_val = (
-        v_ll*(1.0-wx)*(1.0-wy) +
-        v_lr*wx*(1.0-wy) +
-        v_ul*(1.0-wx)*wy +
-        v_ur*wx*wy
+        v_ll * (1.0 - wx) * (1.0 - wy)
+        + v_lr * wx * (1.0 - wy)
+        + v_ul * (1.0 - wx) * wy
+        + v_ur * wx * wy
     )
 
     tmp = out.ravel()
@@ -128,7 +131,9 @@ def bilinear_interp(field, lon0, lat0, dres, lon_x, lat_y):
     return tmp.reshape(out.shape)
 
 
-def read_lonbuffer_patch(topo_da: xr.DataArray, j0: int, j1: int, i0_buf: int, i1_buf: int, nlon: int) -> np.ndarray:
+def read_lonbuffer_patch(
+    topo_da: xr.DataArray, j0: int, j1: int, i0_buf: int, i1_buf: int, nlon: int
+) -> np.ndarray:
     """
     Read slice from [lon-360, lon, lon+360] buffer.
     i0_buf & i1_buf in [0, 3*nlon-1]
@@ -137,21 +142,29 @@ def read_lonbuffer_patch(topo_da: xr.DataArray, j0: int, j1: int, i0_buf: int, i
 
     # seg0
     a0 = max(i0_buf, 0)
-    b0 = min(i1_buf, nlon-1)
+    b0 = min(i1_buf, nlon - 1)
     if a0 <= b0:
-        pieces.append(topo_da.isel(lat=slice(j0, j1+1), lon=slice(a0, b0+1)).values)
+        pieces.append(topo_da.isel(lat=slice(j0, j1 + 1), lon=slice(a0, b0 + 1)).values)
 
     # seg1
     a1 = max(i0_buf, nlon)
-    b1 = min(i1_buf, 2*nlon-1)
+    b1 = min(i1_buf, 2 * nlon - 1)
     if a1 <= b1:
-        pieces.append(topo_da.isel(lat=slice(j0, j1+1), lon=slice(a1-nlon, b1-nlon+1)).values)
+        pieces.append(
+            topo_da.isel(
+                lat=slice(j0, j1 + 1), lon=slice(a1 - nlon, b1 - nlon + 1)
+            ).values
+        )
 
     # seg2
-    a2 = max(i0_buf, 2*nlon)
-    b2 = min(i1_buf, 3*nlon-1)
+    a2 = max(i0_buf, 2 * nlon)
+    b2 = min(i1_buf, 3 * nlon - 1)
     if a2 <= b2:
-        pieces.append(topo_da.isel(lat=slice(j0, j1+1), lon=slice(a2-2*nlon, b2-2*nlon+1)).values)
+        pieces.append(
+            topo_da.isel(
+                lat=slice(j0, j1 + 1), lon=slice(a2 - 2 * nlon, b2 - 2 * nlon + 1)
+            ).values
+        )
 
     if not pieces:
         return None
@@ -162,9 +175,9 @@ def read_lonbuffer_patch(topo_da: xr.DataArray, j0: int, j1: int, i0_buf: int, i
 
 
 def split_rows(nj, size, rank):
-    block_size = nj//size
+    block_size = nj // size
     rem = nj % size
-    j_start = rank*block_size + min(rank, rem)
+    j_start = rank * block_size + min(rank, rem)
     j_count = block_size + (1 if rank < rem else 0)
     j_end = j_start + j_count
     return block_size, rem, j_start, j_end, j_count
@@ -246,7 +259,9 @@ def compute_mean_depth_points(
     polar = PolarWeights.build(nmodes, ntheta)
 
     # Load synbath topo
-    ds_topog = xr.open_dataset(synbath_file, chunks={"lat": chunk_lat, "lon": chunk_lon})
+    ds_topog = xr.open_dataset(
+        synbath_file, chunks={"lat": chunk_lat, "lon": chunk_lon}
+    )
     topog = ds_topog["z"].where(ds_topog["z"] < 0, np.nan).transpose("lat", "lon")
 
     synbath_lon0 = synbath_lon_np[0]
@@ -254,11 +269,11 @@ def compute_mean_depth_points(
     synbath_res = synbath_lon_np[1] - synbath_lon_np[0]
     synbath_lon_buf0 = synbath_lon0 - 360
 
-    deg_per_m_lat = 180/(np.pi*RE)
+    deg_per_m_lat = 180 / (np.pi * RE)
 
     # Precompute per-lat deg_per_m_lon for speed
     coslat = np.cos(np.deg2rad(lat_np))
-    deg_per_m_lon_by_j = 180/(np.pi*RE*coslat)
+    deg_per_m_lon_by_j = 180 / (np.pi * RE * coslat)
     local_idx = np.empty(n_local)
     local_val = np.empty(n_local)
     local_val.fill(np.nan)
@@ -272,17 +287,17 @@ def compute_mean_depth_points(
         deg_per_m_lon = deg_per_m_lon_by_j[j]
 
         # Polar sampling points
-        rm = (d*polar.r)[:, None]
-        x = rm*polar.cos_t
-        y = rm*polar.sin_t
+        rm = (d * polar.r)[:, None]
+        x = rm * polar.cos_t
+        y = rm * polar.sin_t
 
         # Convert meters -> degrees
-        lon_x = lonm + x*deg_per_m_lon
-        lat_y = latm + y*deg_per_m_lat
+        lon_x = lonm + x * deg_per_m_lon
+        lat_y = latm + y * deg_per_m_lat
 
         # Patch bounds in degrees
-        lon_extent = d*deg_per_m_lon
-        lat_extent = d*deg_per_m_lat
+        lon_extent = d * deg_per_m_lon
+        lat_extent = d * deg_per_m_lat
         lon_min = lonm - lon_extent - 2 * abs(synbath_res)
         lon_max = lonm + lon_extent + 2 * abs(synbath_res)
         lat_min = latm - lat_extent - 2 * abs(synbath_res)
@@ -297,18 +312,20 @@ def compute_mean_depth_points(
         if h_patch is None:
             continue
 
-        lon_patch0 = synbath_lon_buf0 + i0_buf*synbath_res
-        lat_patch0 = synbath_lat0 + j0*synbath_res
+        lon_patch0 = synbath_lon_buf0 + i0_buf * synbath_res
+        lat_patch0 = synbath_lat0 + j0 * synbath_res
 
-        depth = bilinear_interp(h_patch, lon_patch0, lat_patch0, synbath_res, lon_x, lat_y)
+        depth = bilinear_interp(
+            h_patch, lon_patch0, lat_patch0, synbath_res, lon_x, lat_y
+        )
 
-        num = np.nansum(depth*polar.weight)
+        num = np.nansum(depth * polar.weight)
         if np.isfinite(num):
             local_val[n] = -num / polar.weight_sum
 
         local_idx[n] = idx1d
 
-        if print_every and ((n+1) % print_every == 0):
+        if print_every and ((n + 1) % print_every == 0):
             print(f"[Rank {rank}] {n+1}/{n_local} tasks done")
 
     out1d = gatherv_indexed(local_idx, local_val, total, comm)
@@ -319,22 +336,62 @@ def compute_mean_depth_points(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Compute mean depth based on lambda1 computed from WOA23.")
-    parser.add_argument("--woa23_temp_file", type=str, required=True, help="Path to WOA23 temperature file.")
-    parser.add_argument("--woa23_salt_file", type=str, required=True, help="Path to WOA23 salinity file.")
-    parser.add_argument("--synbath_file", type=str, required=True, help="Path to synthetic bathymetry file.")
-    parser.add_argument("--nmodes", type=int, default=100, help="Number of modes for polar weights.")
-    parser.add_argument("--ntheta", type=int, default=180, help="Number of theta divisions for polar weights.")
-    parser.add_argument("--earth_radius", type=float, default=6371000.0, help="Earth radius in meters.")
-    parser.add_argument("--chunk_lat", type=int, default=800, help="Latitude chunk size for processing.")
-    parser.add_argument("--chunk_lon", type=int, default=1600, help="Longitude chunk size for processing.")
-    parser.add_argument("--print_every", type=int, default=1, help="Print progress every N rows.")
-    parser.add_argument("--omega", type=float, default=1.405189e-4, help="Tidal frequency in rad/s (default M2)")
+    parser = argparse.ArgumentParser(
+        description="Compute mean depth based on lambda1 computed from WOA23."
+    )
+    parser.add_argument(
+        "--woa23_temp_file",
+        type=str,
+        required=True,
+        help="Path to WOA23 temperature file.",
+    )
+    parser.add_argument(
+        "--woa23_salt_file",
+        type=str,
+        required=True,
+        help="Path to WOA23 salinity file.",
+    )
+    parser.add_argument(
+        "--synbath_file",
+        type=str,
+        required=True,
+        help="Path to synthetic bathymetry file.",
+    )
+    parser.add_argument(
+        "--nmodes", type=int, default=100, help="Number of modes for polar weights."
+    )
+    parser.add_argument(
+        "--ntheta",
+        type=int,
+        default=180,
+        help="Number of theta divisions for polar weights.",
+    )
+    parser.add_argument(
+        "--earth_radius", type=float, default=6371000.0, help="Earth radius in meters."
+    )
+    parser.add_argument(
+        "--chunk_lat", type=int, default=800, help="Latitude chunk size for processing."
+    )
+    parser.add_argument(
+        "--chunk_lon",
+        type=int,
+        default=1600,
+        help="Longitude chunk size for processing.",
+    )
+    parser.add_argument(
+        "--print_every", type=int, default=1, help="Print progress every N rows."
+    )
+    parser.add_argument(
+        "--omega",
+        type=float,
+        default=1.405189e-4,
+        help="Tidal frequency in rad/s (default M2)",
+    )
     parser.add_argument(
         "--output_file",
         type=str,
         default="mean_depth_lambda1_filtered.nc",
-        help="Output for mean depth."
+        help="Output for mean depth.",
     )
     args = parser.parse_args()
 
