@@ -1,4 +1,78 @@
 #!/usr/bin/env python3
+# Copyright 2026 ACCESS-NRI and contributors.
+# SPDX-License-Identifier: Apache-2.0
+
+# =========================================================================================
+# Bottom roughness for internal-tide generation (h^2) from WOA23 + synbath
+#
+# This script builds a bottom-roughness field intended for parameterising internal-tide
+# generation in ocean model configurations. The roughness is defined relative to bathymetry
+# variability on the length scale "seen" by a mode-1 internal tide, rather than the model
+# grid spacing. That choice makes the resulting h^2 largely independent of model resolution,
+# which is important when the model does not explicitly generate internal tides.
+#
+# What the script does
+# --------------------
+# 1) Compute buoyancy frequency squared (N^2)
+#    - Reads WOA23 temperature and salinity climatologies.
+#    - Uses TEOS-10 (gsw) to compute N^2 on vertical mid-levels.
+#
+# 2) Compute the mode-1 internal tide wavelength scale (lambda1)
+#    - For a specified tidal frequency (default: M2), computes lambda1 as a function of
+#      latitude/longitude from N^2 and the Coriolis parameter.
+#    - lambda1 is used as the smoothing / sampling radius for the next steps.
+#
+# 3) Compute Gaussian-weighted mean depth from high-resolution bathymetry (synbath)
+#    - For each WOA grid point with valid lambda1, samples the high-res bathymetry on a
+#      polar stencil whose radius scales with lambda1.
+#    - Applies a Gaussian-like weighting to produce a smoothed mean depth
+#      of the mode-1 internal tide length scale.
+#
+# 4) Compute depth variance (h^2) relative to the smoothed mean depth
+#    - Re-samples synbath on the same polar stencil.
+#    - Interpolates the smoothed mean depth to the stencil points.
+#    - Computes the Gaussian-weighted variance of depth residuals:
+#         h^2 = <(depth - mean_depth)^2>
+#
+# 5) Regrid to the MOM6 grid
+#    - Conservatively regrids the resulting h^2 field from the regular WOA grid onto a MOM6
+#      mesh using xesmf.
+#
+# Usage:
+#   mpirun -n <ranks> python3 generate_bottom_roughness.py \
+#       --woa23_temp_file /path/to/woa23_temp.nc \
+#       --woa23_salt_file /path/to/woa23_salt.nc \
+#       --synbath_file    /path/to/SYNBATH.nc \
+#       --topog_file      /path/to/model_topog.nc \
+#       --hgrid_file      /path/to/hgrid.nc \
+#       --chunk_lat 800 --chunk_lon 1600 \
+#       --nmodes 100 --ntheta 180 \
+#       --omega 1.405189e-4 # M2 \
+#       --output_file bottom_roughness.nc \
+#       [--woa_output_file woa_intermediates.nc]
+#
+# Notes:
+# - The implementation follows the matlab reference workflow provided by Callum Shakespeare
+#   and was adapted for parallel execution and regridding to MOM6.
+# - Background and discussion:
+#   https://github.com/ACCESS-NRI/access-om3-configs/issues/457
+#
+# Contact:
+#    - Minghang Li <Minghang.Li1@anu.edu.au>
+#
+# Dependencies:
+#   - gsw
+#   - xarray
+#   - numpy
+#   - mpi4py
+#   - xesmf
+#
+# Modules:
+#   module use /g/data/xp65/public/modules
+#   module load conda/analysis3-25.05
+#   module load openmpi/4.1.7
+#   module load git
+# =========================================================================================
 import sys
 import os
 import argparse
@@ -153,7 +227,7 @@ def bilinear_interp(
 
 def read_lonbuffer_patch(
     topo_da: xr.DataArray, j0: int, j1: int, i0_buf: int, i1_buf: int, nlon: int
-) -> np.ndarray:
+) -> np.ndarray | None:
     """
     Read slice from [lon-360, lon, lon+360] buffer.
     i0_buf & i1_buf in [0, 3*nlon-1]
@@ -194,7 +268,10 @@ def read_lonbuffer_patch(
     return h
 
 
-def split_rows(nj, size, rank):
+def split_rows(nj: int, size: int, rank: int) -> tuple[int, int, int, int, int]:
+    """
+    Compute a simple block+remainder row decomposition.
+    """
     block_size = nj // size
     rem = nj % size
     j_start = rank * block_size + min(rank, rem)
@@ -203,7 +280,9 @@ def split_rows(nj, size, rank):
     return block_size, rem, j_start, j_end, j_count
 
 
-def gatherv_indexed(local_idx, local_val, total_size, comm):
+def gatherv_indexed(
+    local_idx: np.ndarray, local_val: np.ndarray, total_size: int, comm: MPI.Comm
+) -> np.ndarray | None:
     """
     Gather variable-length (index, value) arrays to rank 0 and rebuild it to a 1D global array.
     Total size is nj*ni
@@ -238,21 +317,28 @@ def gatherv_indexed(local_idx, local_val, total_size, comm):
 
 
 def compute_mean_depth_and_var_points(
-    lon_np,
-    lat_np,
-    lambda1_np,
-    nmodes,
-    ntheta,
-    RE,
-    synbath_file,
-    chunk_lat,
-    chunk_lon,
-    synbath_lon_np,
-    synbath_lat_np,
-    synbath_nlon,
-    comm,
-    print_every=1,
-):
+    lon_np: np.ndarray,
+    lat_np: np.ndarray,
+    lambda1_np: np.ndarray,
+    nmodes: int,
+    ntheta: int,
+    RE: float,
+    synbath_file: str,
+    chunk_lat: int,
+    chunk_lon: int,
+    synbath_lon_np: np.ndarray,
+    synbath_lat_np: np.ndarray,
+    synbath_nlon: int,
+    comm: MPI.Comm,
+    print_every: int = 100,
+) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """
+    Compute Gaussian-weighted mean depth and depth variance at WOA lon/lat points.
+
+    This evalautes depth over a polar sampling pattern whose physical radius is scaled
+    by the local mode-1 internal tide wavelength (lambda1). The sampling is performed
+    on a high-resolution bathymetry dataset (synbath) using nan-preserving bilinear interpolation
+    """
     rank = comm.Get_rank()
     size = comm.Get_size()
 
@@ -459,15 +545,15 @@ def src_1d_corners(coord: xr.DataArray, name: str) -> xr.DataArray:
 def build_source_ds(
     depth_var: xr.DataArray, lon: xr.DataArray, lat: xr.DataArray
 ) -> xr.Dataset:
-    src_mask2d = xr.where(np.isfinite(depth_var.isel({"depth_mid": 0})), 1, 0).astype(
-        "int8"
-    )
+    """
+    Build xesmf source dataset from depth_var with lon/lat coords.
+    """
     lon_b_1d = src_1d_corners(lon, "lon")
     lat_b_1d = src_1d_corners(lat, "lat")
     lat_b2d, lon_b2d = xr.broadcast(lat_b_1d, lon_b_1d)
 
     source_ds = xr.Dataset(
-        data_vars={"mask": (("lat", "lon"), src_mask2d.values)},
+        data_vars={"mask": (("lat", "lon"), depth_var.values)},
         coords={
             "lon": lon,
             "lat": lat,
@@ -478,7 +564,16 @@ def build_source_ds(
     return source_ds
 
 
-def build_target_ds(mask, hgrid_x, hgrid_y, hgrid_xc, hgrid_yc) -> xr.Dataset:
+def build_target_ds(
+    mask: xr.DataArray,
+    hgrid_x: xr.DataArray,
+    hgrid_y: xr.DataArray,
+    hgrid_xc: xr.DataArray,
+    hgrid_yc: xr.DataArray,
+) -> xr.Dataset:
+    """
+    Build xesmf target dataset from MOM6 hgrid coords and mask.
+    """
     target_ds = xr.Dataset(
         data_vars={"mask": (("y", "x"), mask)},
         coords={
@@ -499,7 +594,7 @@ def regrid_depth_var_to_mom6(
     hgrid_file: str,
     method: str = "conservative_normed",
     periodic: bool = True,
-):
+) -> xr.Dataset:
     """
     Regrid depth_var (on regular WOA lon/lat grid) onto MOM6 grid using xESMF.
     """
@@ -602,7 +697,7 @@ def main():
         help="Longitude chunk size for processing.",
     )
     parser.add_argument(
-        "--print_every", type=int, default=1, help="Print progress every N rows."
+        "--print_every", type=int, default=100, help="Print progress every N rows."
     )
     parser.add_argument(
         "--omega",
@@ -660,7 +755,7 @@ def main():
         p3d = p2d.broadcast_like(sea_water_temp)
 
         # Compute N^2
-        print(f"[Rank {rank}] Computing N^2...")
+        print("Computing N^2...")
         lat3 = lat.values[None, :, None]
         N2, p_mid = gsw.Nsquared(
             sea_water_salt,
@@ -689,14 +784,14 @@ def main():
             attrs={"units": "s^-2", "long_name": "Buoyancy frequency squared"},
         )
 
-        print(f"[Rank {rank}] computing lambda1")
+        print("computing lambda1")
         da_lambda1 = compute_lambda(N2_da, lat, depth, args.omega)
 
         lon_np = lon.values
         lat_np = lat.values
         lambda1_np = da_lambda1.values
 
-        print(f"[Rank {rank}] loading high-res topo")
+        print("loading high-res topo")
         ds_meta = xr.open_dataset(args.synbath_file, decode_times=False)
         synbath_lon_np = ds_meta["lon"].values
         synbath_lat_np = ds_meta["lat"].values
