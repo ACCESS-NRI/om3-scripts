@@ -447,8 +447,8 @@ def compute_mean_depth_and_var_points(
 
 def src_1d_corners(coord: xr.DataArray, name: str) -> xr.DataArray:
     c = coord.values
-    mid = 0.5*(c[1:]+c[:-1])
-    b = np.empty(c.size+1)
+    mid = 0.5 * (c[1:] + c[:-1])
+    b = np.empty(c.size + 1)
     b[1:-1] = mid
     b[0] = c[0] - (mid[0] - c[0])
     b[-1] = c[-1] + (c[-1] - mid[-1])
@@ -457,11 +457,11 @@ def src_1d_corners(coord: xr.DataArray, name: str) -> xr.DataArray:
 
 
 def build_source_ds(
-    depth_var: xr.DataArray,
-    lon: xr.DataArray,
-    lat: xr.DataArray
+    depth_var: xr.DataArray, lon: xr.DataArray, lat: xr.DataArray
 ) -> xr.Dataset:
-    src_mask2d = xr.where(np.isfinite(depth_var.isel({"depth_mid": 0})), 1, 0).astype("int8")
+    src_mask2d = xr.where(np.isfinite(depth_var.isel({"depth_mid": 0})), 1, 0).astype(
+        "int8"
+    )
     lon_b_1d = src_1d_corners(lon, "lon")
     lat_b_1d = src_1d_corners(lat, "lat")
     lat_b2d, lon_b2d = xr.broadcast(lat_b_1d, lon_b_1d)
@@ -515,8 +515,8 @@ def regrid_depth_var_to_mom6(
     hgrid = xr.open_dataset(hgrid_file)
 
     # match your slicing exactly
-    hgrid_x  = hgrid.x[1::2, 1::2]
-    hgrid_y  = hgrid.y[1::2, 1::2]
+    hgrid_x = hgrid.x[1::2, 1::2]
+    hgrid_y = hgrid.y[1::2, 1::2]
     hgrid_xc = hgrid.x[::2, ::2]
     hgrid_yc = hgrid.y[::2, ::2]
 
