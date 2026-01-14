@@ -76,7 +76,14 @@ class PolarWeights:
         )
 
 
-def bilinear_interp(field, lon0, lat0, dres, lon_x, lat_y):
+def bilinear_interp(
+    field: np.ndarray,
+    lon0: float,
+    lat0: float,
+    dres: float,
+    lon_x: np.ndarray,
+    lat_y: np.ndarray,
+) -> np.ndarray:
     """
     Bilinear on regular grid - if any corner is NaN -> output NaN.
     """
@@ -113,6 +120,11 @@ def bilinear_interp(field, lon0, lat0, dres, lon_x, lat_y):
     )
     if not np.any(finite):
         return out
+
+    v_ll = v_ll[finite]
+    v_lr = v_lr[finite]
+    v_ul = v_ul[finite]
+    v_ur = v_ur[finite]
 
     wx = ixf[finite] - ix0f[finite]
     wy = iyf[finite] - iy0f[finite]
@@ -197,8 +209,8 @@ def gatherv_indexed(local_idx, local_val, total_size, comm):
         displs = np.zeros_like(counts)
         displs[1:] = np.cumsum(counts)[:-1]
 
-        all_idx = np.empty(np.sum(counts))
-        all_val = np.empty(np.sum(counts))
+        all_idx = np.empty(np.sum(counts), dtype=local_idx.dtype)
+        all_val = np.empty(np.sum(counts), dtype=local_val.dtype)
 
     else:
         counts = None
@@ -212,12 +224,12 @@ def gatherv_indexed(local_idx, local_val, total_size, comm):
     if rank != 0:
         return None
 
-    out1d = np.full(total_size, np.nan)
+    out1d = np.full(total_size, np.nan, dtype=local_val.dtype)
     out1d[all_idx] = all_val
     return out1d
 
 
-def compute_mean_depth_points(
+def compute_mean_depth_and_var_points(
     lon_np,
     lat_np,
     lambda1_np,
@@ -243,7 +255,7 @@ def compute_mean_depth_points(
     if rank == 0:
         mask = lambda1_np > 0.0
         tasks = np.flatnonzero(mask.ravel()).astype(np.int64)
-        print(f"[Rank 0] total points={total}, tasks(ocean)={tasks.size}, ranks={size}")
+        print(f"total points={total}, tasks(ocean)={tasks.size}, ranks={size}")
     else:
         tasks = None
 
@@ -252,7 +264,7 @@ def compute_mean_depth_points(
     local_tasks = tasks[rank::size]
     n_local = local_tasks.size
     if rank == 0:
-        print(f"[Rank 0] avg tasks per rank ~ {tasks.size/size:.1f}")
+        print(f"avg tasks per rank ~ {tasks.size/size:.1f}")
     print(f"[Rank {rank}] local tasks = {n_local}")
 
     # Precompute polar weights
@@ -274,9 +286,11 @@ def compute_mean_depth_points(
     # Precompute per-lat deg_per_m_lon for speed
     coslat = np.cos(np.deg2rad(lat_np))
     deg_per_m_lon_by_j = 180 / (np.pi * RE * coslat)
-    local_idx = np.empty(n_local)
-    local_val = np.empty(n_local)
-    local_val.fill(np.nan)
+
+    # Compute local mean depth
+    local_idx_mean_depth = np.empty(n_local, dtype=np.int64)
+    local_val_mean_depth = np.empty(n_local, dtype=np.float64)
+    local_val_mean_depth.fill(np.nan)
 
     for n, idx1d in enumerate(local_tasks):
         j, i = divmod(int(idx1d), ni)
@@ -309,6 +323,7 @@ def compute_mean_depth_points(
         j1 = int(np.ceil((lat_max - synbath_lat0) / synbath_res))
 
         h_patch = read_lonbuffer_patch(topog, j0, j1, i0_buf, i1_buf, synbath_nlon)
+        local_idx_mean_depth[n] = idx1d
         if h_patch is None:
             continue
 
@@ -321,18 +336,105 @@ def compute_mean_depth_points(
 
         num = np.nansum(depth * polar.weight)
         if np.isfinite(num):
-            local_val[n] = -num / polar.weight_sum
-
-        local_idx[n] = idx1d
+            local_val_mean_depth[n] = -num / polar.weight_sum
 
         if print_every and ((n + 1) % print_every == 0):
             print(f"[Rank {rank}] {n+1}/{n_local} tasks done")
 
-    out1d = gatherv_indexed(local_idx, local_val, total, comm)
-    if rank != 0:
-        return None
+    mean_depth_1d = gatherv_indexed(
+        local_idx_mean_depth, local_val_mean_depth, total, comm
+    )
 
-    return out1d.reshape(nj, ni)
+    if rank == 0:
+        mean_depth = mean_depth_1d.reshape(nj, ni)
+    else:
+        mean_depth = None
+
+    # Now broadcast mean_depth to all ranks
+    mean_depth = comm.bcast(mean_depth, root=0)
+
+    # Now for depth variance
+    local_idx_var_depth = np.empty(n_local, dtype=np.int64)
+    local_val_var_depth = np.empty(n_local, dtype=np.float64)
+    local_val_var_depth.fill(np.nan)
+
+    for n, idx1d in enumerate(local_tasks):
+        j, i = divmod(int(idx1d), ni)
+        lonm = float(lon_np[i])
+        latm = float(lat_np[j])
+        d = float(lambda1_np[j, i])
+
+        local_idx_var_depth[n] = idx1d
+
+        deg_per_m_lon = float(deg_per_m_lon_by_j[j])
+
+        rm = (d * polar.r)[:, None]
+        x = rm * polar.cos_t
+        y = rm * polar.sin_t
+
+        lon_x = lonm + x * deg_per_m_lon
+        lat_y = latm + y * deg_per_m_lat
+
+        # Interpolate synbath depth at polar points - same as the step for mean depth
+        lon_extent = d * deg_per_m_lon
+        lat_extent = d * deg_per_m_lat
+
+        lon_min = lonm - lon_extent - 2.0 * abs(synbath_res)
+        lon_max = lonm + lon_extent + 2.0 * abs(synbath_res)
+        lat_min = latm - lat_extent - 2.0 * abs(synbath_res)
+        lat_max = latm + lat_extent + 2.0 * abs(synbath_res)
+
+        i0_buf = int(np.floor((lon_min - synbath_lon_buf0) / synbath_res))
+        i1_buf = int(np.ceil((lon_max - synbath_lon_buf0) / synbath_res))
+        j0 = int(np.floor((lat_min - synbath_lat0) / synbath_res))
+        j1 = int(np.ceil((lat_max - synbath_lat0) / synbath_res))
+
+        h_patch = read_lonbuffer_patch(topog, j0, j1, i0_buf, i1_buf, synbath_nlon)
+        if h_patch is None:
+            continue
+
+        lon_patch0 = synbath_lon_buf0 + i0_buf * synbath_res
+        lat_patch0 = synbath_lat0 + j0 * synbath_res
+        depth = bilinear_interp(
+            h_patch, lon_patch0, lat_patch0, synbath_res, lon_x, lat_y
+        )
+
+        # Interpolate mean_depth to polar points
+        lon_x_wrapped = lon_x.copy()
+        base_min = lon_np[0]
+        lon_x_wrapped = (lon_x_wrapped - base_min) % 360 + base_min
+
+        # Then bilinear on mean_depth
+        depth_m = bilinear_interp(
+            mean_depth,
+            lon_np[0],
+            lat_np[0],
+            lon_np[1] - lon_np[0],
+            lon_x_wrapped,
+            lat_y,
+        )
+
+        depth_m_nag = -depth_m
+
+        # Compute variance
+        variance = (depth - depth_m_nag) ** 2
+
+        num = np.nansum(variance * polar.weight)
+        if np.isfinite(num):
+            local_val_var_depth[n] = num / polar.weight_sum
+
+        if print_every and ((n + 1) % print_every == 0):
+            print(f"[Rank {rank}] {n+1}/{n_local} tasks done for variance")
+
+    depth_var_1d = gatherv_indexed(
+        local_idx_var_depth, local_val_var_depth, total, comm
+    )
+
+    if rank == 0:
+        depth_var = depth_var_1d.reshape(nj, ni)
+        return mean_depth, depth_var
+
+    return None, None
 
 
 def main():
@@ -476,7 +578,7 @@ def main():
     synbath_lat_np = comm.bcast(synbath_lat_np, root=0)
     synbath_nlon = comm.bcast(synbath_nlon, root=0)
 
-    mean_depth = compute_mean_depth_points(
+    mean_depth, depth_var = compute_mean_depth_and_var_points(
         lon_np=lon_np,
         lat_np=lat_np,
         lambda1_np=lambda1_np,
@@ -494,8 +596,17 @@ def main():
     )
 
     if rank == 0:
-        ds_out_mean_depth = xr.Dataset(
+        ds_out = xr.Dataset(
             {
+                "lambda1": xr.DataArray(
+                    lambda1_np,
+                    dims=("lat", "lon"),
+                    coords={"lat": lat_np, "lon": lon_np},
+                    attrs={
+                        "long_name": "Mode-1 internal tide wavelength",
+                        "units": "m",
+                    },
+                ),
                 "mean_depth": xr.DataArray(
                     mean_depth,
                     dims=("lat", "lon"),
@@ -505,9 +616,24 @@ def main():
                         "units": "m",
                     },
                 ),
-            }
+                "depth_var": xr.DataArray(
+                    depth_var,
+                    dims=("lat", "lon"),
+                    coords={"lat": lat_np, "lon": lon_np},
+                    attrs={
+                        "long_name": "Gaussian-weighted variance of depth residuals",
+                        "units": "m^2",
+                    },
+                ),
+            },
+            attrs={
+                "nmodes": int(args.nmodes),
+                "ntheta": int(args.ntheta),
+                "earth_radius_m": float(args.earth_radius),
+                "omega_rad_s": float(args.omega),
+            },
         )
-        ds_out_mean_depth.to_netcdf(args.output_file)
+        ds_out.to_netcdf(args.output_file)
         print(f"Output written to {args.output_file}")
 
 
