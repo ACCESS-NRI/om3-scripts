@@ -12,7 +12,7 @@ import xesmf as xe
 
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
-from scripts_common import get_provenance_metadata
+from scripts_common import get_provenance_metadata, md5sum
 from mesh_generation.generate_mesh import mom6_mask_detection
 
 
@@ -786,6 +786,38 @@ def main():
             method="conservative_normed",
             periodic=True,
         )
+
+        # Add provenance metadata and MD5 hashes for input files.
+        this_file = os.path.normpath(__file__)
+        runcmd = (
+            f"mpirun -n $PBS_NCPUS python3 {os.path.basename(this_file)} "
+            f"--woa23_temp_file={args.woa23_temp_file} "
+            f"--woa23_salt_file={args.woa23_salt_file} "
+            f"--synbath_file={args.synbath_file} "
+            f"--topog-file={args.topog_file} "
+            f"--hgrid-file={args.hgrid_file} "
+            f"--chunk-lat={args.chunk_lat} "
+            f"--chunk-lon={args.chunk_lon} "
+            f"--nmodes={args.nmodes} "
+            f"--ntheta={args.ntheta} "
+            f"--earth-radius={args.earth_radius} "
+            f"--omega={args.omega} "
+            f"--print-every={args.print_every} "
+            f"--woa-output-file={args.woa_output_file} "
+            f"--output_file={args.output_file}"
+        )
+
+        history = get_provenance_metadata(this_file, runcmd)
+        global_attrs = {"history": history}
+        file_hashes = [
+            f"{args.woa23_temp_file} (md5 hash: {md5sum(args.woa23_temp_file)})",
+            f"{args.woa23_salt_file} (md5 hash: {md5sum(args.woa23_salt_file)})",
+            f"{args.synbath_file} (md5 hash: {md5sum(args.synbath_file)})",
+            f"{args.hgrid_file} (md5 hash: {md5sum(args.hgrid_file)})",
+            f"{args.topog_file} (md5 hash: {md5sum(args.topog_file)})",
+        ]
+        global_attrs["inputFile"] = ", ".join(file_hashes)
+        regrid_depth_var.attrs.update(global_attrs)
 
         regrid_depth_var.to_netcdf(args.output_file)
         print(f"Output written to {args.output_file}")
