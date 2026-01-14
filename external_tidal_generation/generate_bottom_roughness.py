@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
-
+import sys
+import os
 import argparse
+from pathlib import Path
 import numpy as np
 from mpi4py import MPI
 import xarray as xr
 import gsw
 from dataclasses import dataclass
+import xesmf as xe
+
+path_root = Path(__file__).parents[1]
+sys.path.append(str(path_root))
+from scripts_common import get_provenance_metadata
+from mesh_generation.generate_mesh import mom6_mask_detection
 
 
 def coriolis_f(lat: xr.DataArray) -> xr.DataArray:
@@ -437,6 +445,96 @@ def compute_mean_depth_and_var_points(
     return None, None
 
 
+def src_1d_corners(coord: xr.DataArray, name: str) -> xr.DataArray:
+    c = coord.values
+    mid = 0.5*(c[1:]+c[:-1])
+    b = np.empty(c.size+1)
+    b[1:-1] = mid
+    b[0] = c[0] - (mid[0] - c[0])
+    b[-1] = c[-1] + (c[-1] - mid[-1])
+
+    return xr.DataArray(b, dims=(f"{name}_b",), name=f"{name}_b")
+
+
+def build_source_ds(
+    depth_var: xr.DataArray,
+    lon: xr.DataArray,
+    lat: xr.DataArray
+) -> xr.Dataset:
+    src_mask2d = xr.where(np.isfinite(depth_var.isel({"depth_mid": 0})), 1, 0).astype("int8")
+    lon_b_1d = src_1d_corners(lon, "lon")
+    lat_b_1d = src_1d_corners(lat, "lat")
+    lat_b2d, lon_b2d = xr.broadcast(lat_b_1d, lon_b_1d)
+
+    source_ds = xr.Dataset(
+        data_vars={"mask": (("lat", "lon"), src_mask2d.values)},
+        coords={
+            "lon": lon,
+            "lat": lat,
+            "lon_b": (("lat_b", "lon_b"), lon_b2d.values),
+            "lat_b": (("lat_b", "lon_b"), lat_b2d.values),
+        },
+    )
+    return source_ds
+
+
+def build_target_ds(mask, hgrid_x, hgrid_y, hgrid_xc, hgrid_yc) -> xr.Dataset:
+    target_ds = xr.Dataset(
+        data_vars={"mask": (("y", "x"), mask)},
+        coords={
+            "lon": (("y", "x"), hgrid_x.values),
+            "lat": (("y", "x"), hgrid_y.values),
+            "lon_b": (("y_b", "x_b"), hgrid_xc.values),
+            "lat_b": (("y_b", "x_b"), hgrid_yc.values),
+        },
+    )
+    return target_ds
+
+
+def regrid_depth_var_to_mom6(
+    depth_var: xr.DataArray,
+    source_lon: xr.DataArray,
+    source_lat: xr.DataArray,
+    topog_file: str,
+    hgrid_file: str,
+    method: str = "conservative_normed",
+    periodic: bool = True,
+):
+    """
+    Regrid depth_var (on regular WOA lon/lat grid) onto MOM6 grid using xESMF.
+    """
+
+    source_lon = depth_var["lon"]
+    source_lat = depth_var["lat"]
+
+    # Load model topog file then generate ocean mask ranging from [-280, 80]
+    topog = xr.open_dataset(topog_file)
+    mask = mom6_mask_detection(topog)
+
+    # model hgrid
+    hgrid = xr.open_dataset(hgrid_file)
+
+    # match your slicing exactly
+    hgrid_x  = hgrid.x[1::2, 1::2]
+    hgrid_y  = hgrid.y[1::2, 1::2]
+    hgrid_xc = hgrid.x[::2, ::2]
+    hgrid_yc = hgrid.y[::2, ::2]
+
+    source_ds = build_source_ds(depth_var, lon=source_lon, lat=source_lat)
+    target_ds = build_target_ds(mask, hgrid_x, hgrid_y, hgrid_xc, hgrid_yc)
+
+    regridder_kwargs = dict(
+        method=method,
+        periodic=periodic,
+    )
+
+    regridder = xe.Regridder(source_ds, target_ds, **regridder_kwargs)
+
+    regrid_depth_var = regridder(depth_var)
+
+    return regrid_depth_var
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Compute mean depth based on lambda1 computed from WOA23."
@@ -490,10 +588,28 @@ def main():
         help="Tidal frequency in rad/s (default M2)",
     )
     parser.add_argument(
+        "--topog_file",
+        type=str,
+        required=True,
+        help="Path to the model bathymetry file.",
+    )
+    parser.add_argument(
+        "--hgrid_file",
+        type=str,
+        required=True,
+        help="Path to the model hgrid file.",
+    )
+    parser.add_argument(
+        "--woa_output_file",
+        type=str,
+        default=None,
+        help="Optional path to the raw output file including lambda1, mean_depth, depth_var on WOA grid.",
+    )
+    parser.add_argument(
         "--output_file",
         type=str,
-        default="mean_depth_lambda1_filtered.nc",
-        help="Output for mean depth.",
+        default="bottom_roughness.nc",
+        help="Path to the bottom roughness output file.",
     )
     args = parser.parse_args()
 
@@ -596,44 +712,69 @@ def main():
     )
 
     if rank == 0:
-        ds_out = xr.Dataset(
-            {
-                "lambda1": xr.DataArray(
-                    lambda1_np,
-                    dims=("lat", "lon"),
-                    coords={"lat": lat_np, "lon": lon_np},
-                    attrs={
-                        "long_name": "Mode-1 internal tide wavelength",
-                        "units": "m",
-                    },
-                ),
-                "mean_depth": xr.DataArray(
-                    mean_depth,
-                    dims=("lat", "lon"),
-                    coords={"lat": lat_np, "lon": lon_np},
-                    attrs={
-                        "long_name": "Gaussian-weighted mean depth using internal tide scale",
-                        "units": "m",
-                    },
-                ),
-                "depth_var": xr.DataArray(
-                    depth_var,
-                    dims=("lat", "lon"),
-                    coords={"lat": lat_np, "lon": lon_np},
-                    attrs={
-                        "long_name": "Gaussian-weighted variance of depth residuals",
-                        "units": "m^2",
-                    },
-                ),
+        if args.woa_output_file is not None:
+            ds_woa_output = xr.Dataset(
+                {
+                    "lambda1": xr.DataArray(
+                        lambda1_np,
+                        dims=("lat", "lon"),
+                        coords={"lat": lat_np, "lon": lon_np},
+                        attrs={
+                            "long_name": "Mode-1 internal tide wavelength",
+                            "units": "m",
+                        },
+                    ),
+                    "mean_depth": xr.DataArray(
+                        mean_depth,
+                        dims=("lat", "lon"),
+                        coords={"lat": lat_np, "lon": lon_np},
+                        attrs={
+                            "long_name": "Gaussian-weighted mean depth using internal tide scale",
+                            "units": "m",
+                        },
+                    ),
+                    "depth_var": xr.DataArray(
+                        depth_var,
+                        dims=("lat", "lon"),
+                        coords={"lat": lat_np, "lon": lon_np},
+                        attrs={
+                            "long_name": "Gaussian-weighted variance of depth residuals",
+                            "units": "m^2",
+                        },
+                    ),
+                },
+                attrs={
+                    "nmodes": int(args.nmodes),
+                    "ntheta": int(args.ntheta),
+                    "earth_radius_m": float(args.earth_radius),
+                    "omega_rad_s": float(args.omega),
+                },
+            )
+            ds_woa_output.to_netcdf(args.woa_output_file)
+            print(f"Output written to {args.woa_output_file}")
+
+        # Regridding to model grid
+        regrid_depth_var = regrid_depth_var_to_mom6(
+            depth_var=depth_var,
+            source_lon=lon,
+            source_lat=lat,
+            topog_file=args.topog_file,
+            hgrid_file=args.hgrid_file,
+            method="conservative_normed",
+            periodic=True,
+        )
+
+        ds_bottom_roughness = xr.Dataset(
+            data_vars={
+                "h2": (("y", "x"), regrid_depth_var.values),
             },
-            attrs={
-                "nmodes": int(args.nmodes),
-                "ntheta": int(args.ntheta),
-                "earth_radius_m": float(args.earth_radius),
-                "omega_rad_s": float(args.omega),
+            coords={
+                "lon": (("y", "x"), regrid_depth_var.lon.values),
+                "lat": (("y", "x"), regrid_depth_var.lat.values),
             },
         )
-        ds_out.to_netcdf(args.output_file)
+
+        ds_bottom_roughness.to_netcdf(args.output_file)
         print(f"Output written to {args.output_file}")
 
 
