@@ -414,10 +414,10 @@ def compute_mean_depth_and_var_points(
             lat_y,
         )
 
-        depth_m_nag = -depth_m
+        depth_m_neg = -depth_m
 
         # Compute variance
-        variance = (depth - depth_m_nag) ** 2
+        variance = (depth - depth_m_neg) ** 2
 
         num = np.nansum(variance * polar.weight)
         if np.isfinite(num):
