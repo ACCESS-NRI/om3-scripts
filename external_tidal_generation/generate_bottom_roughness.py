@@ -530,9 +530,32 @@ def regrid_depth_var_to_mom6(
 
     regridder = xe.Regridder(source_ds, target_ds, **regridder_kwargs)
 
-    regrid_depth_var = regridder(depth_var)
+    target_ds["h2"] = regridder(depth_var)
+    target_ds["h2"] = target_ds["h2"].fillna(0.0)
 
-    return regrid_depth_var
+    # tidy up attrs
+    target_ds = target_ds.drop_vars(["lon_b", "lat_b", "mask"])
+
+    tmp_attrs = {
+        "lon": {
+            "long_name": "Longitude",
+            "units": "degrees_east",
+        },
+        "lat": {
+            "long_name": "Latitude",
+            "units": "degrees_north",
+        },
+        "h2": {
+            "long_name": "Bottom roughness squared (h^2) for internal tide generation",
+            "units": "m^2",
+            "regrid_method": "conservative_normed",
+        },
+    }
+
+    for var, attrs in tmp_attrs.items():
+        target_ds[var].attrs.update(attrs)
+
+    return target_ds
 
 
 def main():
@@ -764,17 +787,7 @@ def main():
             periodic=True,
         )
 
-        ds_bottom_roughness = xr.Dataset(
-            data_vars={
-                "h2": (("y", "x"), regrid_depth_var.values),
-            },
-            coords={
-                "lon": (("y", "x"), regrid_depth_var.lon.values),
-                "lat": (("y", "x"), regrid_depth_var.lat.values),
-            },
-        )
-
-        ds_bottom_roughness.to_netcdf(args.output_file)
+        regrid_depth_var.to_netcdf(args.output_file)
         print(f"Output written to {args.output_file}")
 
 
