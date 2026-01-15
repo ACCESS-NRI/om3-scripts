@@ -45,8 +45,10 @@
 #       --synbath_file    /path/to/SYNBATH.nc \
 #       --topog_file      /path/to/model_topog.nc \
 #       --hgrid_file      /path/to/hgrid.nc \
-#       --chunk_lat 800 --chunk_lon 1600 \
-#       --nmodes 100 --ntheta 180 \
+#       --chunk_lat 800 \
+#       --chunk_lon 1600 \
+#       --nmodes 100 \
+#       --ntheta 180 \
 #       --omega 1.405189e-4 # M2 \
 #       --output_file bottom_roughness.nc \
 #       [--woa_output_file woa_intermediates.nc]
@@ -587,9 +589,7 @@ def build_target_ds(
 
 
 def regrid_depth_var_to_mom6(
-    depth_var: xr.DataArray,
-    source_lon: xr.DataArray,
-    source_lat: xr.DataArray,
+    depth_var: xr.Dataset,
     topog_file: str,
     hgrid_file: str,
     method: str = "conservative_normed",
@@ -830,52 +830,50 @@ def main():
     )
 
     if rank == 0:
+        ds_woa_output = xr.Dataset(
+            {
+                "lambda1": xr.DataArray(
+                    lambda1_np,
+                    dims=("lat", "lon"),
+                    coords={"lat": lat_np, "lon": lon_np},
+                    attrs={
+                        "long_name": "Mode-1 internal tide wavelength",
+                        "units": "m",
+                    },
+                ),
+                "mean_depth": xr.DataArray(
+                    mean_depth,
+                    dims=("lat", "lon"),
+                    coords={"lat": lat_np, "lon": lon_np},
+                    attrs={
+                        "long_name": "Gaussian-weighted mean depth using internal tide scale",
+                        "units": "m",
+                    },
+                ),
+                "depth_var": xr.DataArray(
+                    depth_var,
+                    dims=("lat", "lon"),
+                    coords={"lat": lat_np, "lon": lon_np},
+                    attrs={
+                        "long_name": "Gaussian-weighted variance of depth residuals",
+                        "units": "m^2",
+                    },
+                ),
+            },
+            attrs={
+                "nmodes": args.nmodes,
+                "ntheta": args.ntheta,
+                "earth_radius_m": args.earth_radius,
+                "omega_rad_s": args.omega,
+            },
+        )
         if args.woa_output_file is not None:
-            ds_woa_output = xr.Dataset(
-                {
-                    "lambda1": xr.DataArray(
-                        lambda1_np,
-                        dims=("lat", "lon"),
-                        coords={"lat": lat_np, "lon": lon_np},
-                        attrs={
-                            "long_name": "Mode-1 internal tide wavelength",
-                            "units": "m",
-                        },
-                    ),
-                    "mean_depth": xr.DataArray(
-                        mean_depth,
-                        dims=("lat", "lon"),
-                        coords={"lat": lat_np, "lon": lon_np},
-                        attrs={
-                            "long_name": "Gaussian-weighted mean depth using internal tide scale",
-                            "units": "m",
-                        },
-                    ),
-                    "depth_var": xr.DataArray(
-                        depth_var,
-                        dims=("lat", "lon"),
-                        coords={"lat": lat_np, "lon": lon_np},
-                        attrs={
-                            "long_name": "Gaussian-weighted variance of depth residuals",
-                            "units": "m^2",
-                        },
-                    ),
-                },
-                attrs={
-                    "nmodes": int(args.nmodes),
-                    "ntheta": int(args.ntheta),
-                    "earth_radius_m": float(args.earth_radius),
-                    "omega_rad_s": float(args.omega),
-                },
-            )
             ds_woa_output.to_netcdf(args.woa_output_file)
             print(f"Output written to {args.woa_output_file}")
 
         # Regridding to model grid
         regrid_depth_var = regrid_depth_var_to_mom6(
-            depth_var=depth_var,
-            source_lon=lon,
-            source_lat=lat,
+            depth_var=ds_woa_output["depth_var"],
             topog_file=args.topog_file,
             hgrid_file=args.hgrid_file,
             method="conservative_normed",
