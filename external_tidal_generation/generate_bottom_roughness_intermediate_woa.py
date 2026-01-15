@@ -34,24 +34,23 @@
 #    - Computes the Gaussian-weighted variance of depth residuals:
 #         h^2 = <(depth - mean_depth)^2>
 #
-# 5) Regrid to the MOM6 grid
-#    - Conservatively regrids the resulting h^2 field from the regular WOA grid onto a MOM6
-#      mesh using xesmf.
+# 5) Regrid to the MOM6 grid (done separately)
+#    - Regridding is performed by generate_bottom_roughness_regrid.py.
+#    - This is intentionally split out due to a known xesmf + mpi4py issue in the analysis
+#      environment: https://github.com/ACCESS-NRI/ACCESS-Analysis-Conda/issues/207
+#    - The regrid step conservatively maps h^2 from the regular WOA grid onto a MOM6 mesh.
 #
 # Usage:
-#   mpirun -n <ranks> python3 generate_bottom_roughness.py \
+#   mpirun -n <ranks> python3 generate_bottom_roughness_intermediate_woa.py \
 #       --woa23_temp_file /path/to/woa23_temp.nc \
 #       --woa23_salt_file /path/to/woa23_salt.nc \
 #       --synbath_file    /path/to/SYNBATH.nc \
-#       --topog_file      /path/to/model_topog.nc \
-#       --hgrid_file      /path/to/hgrid.nc \
 #       --chunk_lat 800 \
 #       --chunk_lon 1600 \
 #       --nmodes 100 \
 #       --ntheta 180 \
 #       --omega 1.405189e-4 # M2 \
-#       --output_file bottom_roughness.nc \
-#       [--woa_output_file woa_intermediates.nc]
+#       --woa_intermediate_file woa_intermediates.nc
 #
 # Notes:
 # - The implementation follows the matlab reference workflow provided by Callum Shakespeare
@@ -67,7 +66,6 @@
 #   - xarray
 #   - numpy
 #   - mpi4py
-#   - xesmf
 #
 # Modules:
 #   module use /g/data/xp65/public/modules
@@ -84,12 +82,10 @@ from mpi4py import MPI
 import xarray as xr
 import gsw
 from dataclasses import dataclass
-import xesmf as xe
 
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 from scripts_common import get_provenance_metadata, md5sum
-from mesh_generation.generate_mesh import mom6_mask_detection
 
 
 def coriolis_f(lat: xr.DataArray) -> xr.DataArray:
@@ -533,129 +529,9 @@ def compute_mean_depth_and_var_points(
     return None, None
 
 
-def src_1d_corners(coord: xr.DataArray, name: str) -> xr.DataArray:
-    c = coord.values
-    mid = 0.5 * (c[1:] + c[:-1])
-    b = np.empty(c.size + 1)
-    b[1:-1] = mid
-    b[0] = c[0] - (mid[0] - c[0])
-    b[-1] = c[-1] + (c[-1] - mid[-1])
-
-    return xr.DataArray(b, dims=(f"{name}_b",), name=f"{name}_b")
-
-
-def build_source_ds(
-    depth_var: xr.DataArray, lon: xr.DataArray, lat: xr.DataArray
-) -> xr.Dataset:
-    """
-    Build xesmf source dataset from depth_var with lon/lat coords.
-    """
-    lon_b_1d = src_1d_corners(lon, "lon")
-    lat_b_1d = src_1d_corners(lat, "lat")
-    lat_b2d, lon_b2d = xr.broadcast(lat_b_1d, lon_b_1d)
-
-    source_ds = xr.Dataset(
-        data_vars={"mask": (("lat", "lon"), depth_var.values)},
-        coords={
-            "lon": lon,
-            "lat": lat,
-            "lon_b": (("lat_b", "lon_b"), lon_b2d.values),
-            "lat_b": (("lat_b", "lon_b"), lat_b2d.values),
-        },
-    )
-    return source_ds
-
-
-def build_target_ds(
-    mask: xr.DataArray,
-    hgrid_x: xr.DataArray,
-    hgrid_y: xr.DataArray,
-    hgrid_xc: xr.DataArray,
-    hgrid_yc: xr.DataArray,
-) -> xr.Dataset:
-    """
-    Build xesmf target dataset from MOM6 hgrid coords and mask.
-    """
-    target_ds = xr.Dataset(
-        data_vars={"mask": (("y", "x"), mask)},
-        coords={
-            "lon": (("y", "x"), hgrid_x.values),
-            "lat": (("y", "x"), hgrid_y.values),
-            "lon_b": (("y_b", "x_b"), hgrid_xc.values),
-            "lat_b": (("y_b", "x_b"), hgrid_yc.values),
-        },
-    )
-    return target_ds
-
-
-def regrid_depth_var_to_mom6(
-    depth_var: xr.Dataset,
-    topog_file: str,
-    hgrid_file: str,
-    method: str = "conservative_normed",
-    periodic: bool = True,
-) -> xr.Dataset:
-    """
-    Regrid depth_var (on regular WOA lon/lat grid) onto MOM6 grid using xESMF.
-    """
-
-    source_lon = depth_var["lon"]
-    source_lat = depth_var["lat"]
-
-    # Load model topog file then generate ocean mask ranging from [-280, 80]
-    topog = xr.open_dataset(topog_file)
-    mask = mom6_mask_detection(topog)
-
-    # model hgrid
-    hgrid = xr.open_dataset(hgrid_file)
-
-    # match your slicing exactly
-    hgrid_x = hgrid.x[1::2, 1::2]
-    hgrid_y = hgrid.y[1::2, 1::2]
-    hgrid_xc = hgrid.x[::2, ::2]
-    hgrid_yc = hgrid.y[::2, ::2]
-
-    source_ds = build_source_ds(depth_var, lon=source_lon, lat=source_lat)
-    target_ds = build_target_ds(mask, hgrid_x, hgrid_y, hgrid_xc, hgrid_yc)
-
-    regridder_kwargs = dict(
-        method=method,
-        periodic=periodic,
-    )
-
-    regridder = xe.Regridder(source_ds, target_ds, **regridder_kwargs)
-
-    target_ds["h2"] = regridder(depth_var)
-    target_ds["h2"] = target_ds["h2"].fillna(0.0)
-
-    # tidy up attrs
-    target_ds = target_ds.drop_vars(["lon_b", "lat_b", "mask"])
-
-    tmp_attrs = {
-        "lon": {
-            "long_name": "Longitude",
-            "units": "degrees_east",
-        },
-        "lat": {
-            "long_name": "Latitude",
-            "units": "degrees_north",
-        },
-        "h2": {
-            "long_name": "Bottom roughness squared (h^2) for internal tide generation",
-            "units": "m^2",
-            "regrid_method": "conservative_normed",
-        },
-    }
-
-    for var, attrs in tmp_attrs.items():
-        target_ds[var].attrs.update(attrs)
-
-    return target_ds
-
-
 def main():
     parser = argparse.ArgumentParser(
-        description="Compute mean depth based on lambda1 computed from WOA23."
+        description="Compute depth variance based on lambda1 computed from WOA23."
     )
     parser.add_argument(
         "--woa23_temp_file",
@@ -706,28 +582,10 @@ def main():
         help="Tidal frequency in rad/s (default M2)",
     )
     parser.add_argument(
-        "--topog_file",
-        type=str,
-        required=True,
-        help="Path to the model bathymetry file.",
-    )
-    parser.add_argument(
-        "--hgrid_file",
-        type=str,
-        required=True,
-        help="Path to the model hgrid file.",
-    )
-    parser.add_argument(
-        "--woa_output_file",
+        "--woa_intermediate_file",
         type=str,
         default=None,
-        help="Optional path to the raw output file including lambda1, mean_depth, depth_var on WOA grid.",
-    )
-    parser.add_argument(
-        "--output_file",
-        type=str,
-        default="bottom_roughness.nc",
-        help="Path to the bottom roughness output file.",
+        help="Intermediate output file including lambda1, mean_depth, depth_var on WOA grid.",
     )
     args = parser.parse_args()
 
@@ -867,18 +725,8 @@ def main():
                 "omega_rad_s": args.omega,
             },
         )
-        if args.woa_output_file is not None:
-            ds_woa_output.to_netcdf(args.woa_output_file)
-            print(f"Output written to {args.woa_output_file}")
-
-        # Regridding to model grid
-        regrid_depth_var = regrid_depth_var_to_mom6(
-            depth_var=ds_woa_output["depth_var"],
-            topog_file=args.topog_file,
-            hgrid_file=args.hgrid_file,
-            method="conservative_normed",
-            periodic=True,
-        )
+        ds_woa_output.to_netcdf(args.woa_intermediate_file)
+        print(f"Output written to {args.woa_intermediate_file}")
 
         # Add provenance metadata and MD5 hashes for input files.
         this_file = os.path.normpath(__file__)
@@ -887,8 +735,6 @@ def main():
             f"--woa23_temp_file={args.woa23_temp_file} "
             f"--woa23_salt_file={args.woa23_salt_file} "
             f"--synbath_file={args.synbath_file} "
-            f"--topog-file={args.topog_file} "
-            f"--hgrid-file={args.hgrid_file} "
             f"--chunk-lat={args.chunk_lat} "
             f"--chunk-lon={args.chunk_lon} "
             f"--nmodes={args.nmodes} "
@@ -896,8 +742,7 @@ def main():
             f"--earth-radius={args.earth_radius} "
             f"--omega={args.omega} "
             f"--print-every={args.print_every} "
-            f"--woa-output-file={args.woa_output_file} "
-            f"--output_file={args.output_file}"
+            f"--woa-intermediate-file={args.woa_intermediate_file} "
         )
 
         history = get_provenance_metadata(this_file, runcmd)
@@ -906,14 +751,12 @@ def main():
             f"{args.woa23_temp_file} (md5 hash: {md5sum(args.woa23_temp_file)})",
             f"{args.woa23_salt_file} (md5 hash: {md5sum(args.woa23_salt_file)})",
             f"{args.synbath_file} (md5 hash: {md5sum(args.synbath_file)})",
-            f"{args.hgrid_file} (md5 hash: {md5sum(args.hgrid_file)})",
-            f"{args.topog_file} (md5 hash: {md5sum(args.topog_file)})",
         ]
         global_attrs["inputFile"] = ", ".join(file_hashes)
-        regrid_depth_var.attrs.update(global_attrs)
+        ds_woa_output.attrs.update(global_attrs)
 
-        regrid_depth_var.to_netcdf(args.output_file)
-        print(f"Output written to {args.output_file}")
+        ds_woa_output.to_netcdf(args.woa_intermediate_file)
+        print(f"Output written to {args.woa_intermediate_file}")
 
 
 if __name__ == "__main__":
