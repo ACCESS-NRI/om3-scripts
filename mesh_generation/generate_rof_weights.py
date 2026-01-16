@@ -51,8 +51,8 @@ COMP_ENCODING = {"complevel": 1, "compression": "zlib"}  # compression settings 
 def drof_remapping_weights(mesh_filename, weights_filename, nx, ny, global_attrs=None):
     # We need to generate remapping weights for use in the mediator, such that the overall volume of runoff is conserved
     # and no runoff is mapped onto land cells. Inside the mediator, the grid doesn't change as we run the mediator with
-    # the ocean grid (the DROF component does the remapping from JRA grid to mediator grid). There we use the
-    # same _mesh_file for the input and output mesh, however this same routine would work for differing input and
+    # the ocean grid (the DROF component does the remapping from JRA grid to mediator grid). Therefore we use the
+    # same _mesh_file for the input and output mesh, however this same function would work for differing input and
     # output meshes
 
     model_mesh = esmpy.Mesh(
@@ -98,7 +98,7 @@ def drof_remapping_weights(mesh_filename, weights_filename, nx, ny, global_attrs
     # make new mask of land plus one adjacent cell of ocean
     land_neighbours = binary_dilation(mask_2d == 0)
 
-    # target for runoff is ocean cell which is adjacent land
+    # target for runoff is ocean cells which are adjacent land
     target_cells = (land_neighbours & mask_2d).flatten()
 
     # Find index for all target cells
