@@ -531,7 +531,7 @@ def compute_mean_depth_and_var_points(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Compute depth variance based on lambda1 computed from WOA23."
+        description="Compute a grid-independent bottom roughness by computing N^2 from WOA23 T/S, estimating a mode-1 internal-tide wavelength, and using it to smooth high-resolution bathymetry before evaluating depth variance."
     )
     parser.add_argument(
         "--woa23_temp_file",

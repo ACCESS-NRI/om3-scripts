@@ -173,7 +173,7 @@ def regrid_depth_var_to_mom6(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Compute mean depth based on lambda1 computed from WOA23."
+        description="Regridding the MOM6 input bottom roughness squared (h^2) field from the WOA grid to the target model grid."
     )
     parser.add_argument(
         "--topog_file",
