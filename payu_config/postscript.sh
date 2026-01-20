@@ -9,6 +9,7 @@
 #PBS -l walltime=00:30:00
 #PBS -l wd
 #PBS -j oe
+#PBS -W umask=027
 
 PYTHONNOUSERSITE=True
 
