@@ -153,8 +153,9 @@ for year1 in years:
         ryf.encoding = ds[baseyear].encoding
 
         for varname in ryf.data_vars:
-            # Have to give all variables a useless FillValue attribute, otherwise xarray
-            # makes it NaN and MOM does not like this
+            # Have to give all variables a FillValue attribute, otherwise xarray
+            # makes it NaN which causes floating point errors
+            # copy FillValue if it exists, otherwise use default
             ryf[varname].encoding["_FillValue"] = (
                 ds[varname].encoding.get("_FillValue", FILLVALUE)
                 if varname in ds
