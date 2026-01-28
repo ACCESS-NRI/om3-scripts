@@ -13,7 +13,7 @@
 #
 # Usage:
 # First start up an interactive job or an ARE session on Gadi to get enough memory:
-# qsub -I -q express -l mem=32GB -l storage=gdata/xp65+gdata/qv56+gdata/tm70+gdata/ua8
+# qsub -I -q express -l mem=32GB -l storage=gdata/xp65+gdata/qv56+gdata/tm70+gdata/ua8 -l wd
 #
 # Then run the following to create the May-May repeat year forcings
 # module use /g/data/xp65/public/modules ; module load conda/analysis3
@@ -40,7 +40,11 @@ sys.path.append(str(path_root))
 
 from scripts_common import get_provenance_metadata, md5sum
 
-COMP_ENCODING = {"complevel": 1, "compression": "zlib"}  # compression settings to use
+FILLVALUE = 1e20
+# COMP_ENCODING = {"complevel": 1, "compression": "zlib", "_FillValue": FILL_VALUE}
+# compression settings to use
+COMPLEVEL = 1
+COMPRESSION = "zlib"
 
 source_data = "jra55v1p6"
 # source_data = "jra55v1p4"
@@ -83,7 +87,6 @@ else:
     ]
     years = (1984, 1990, 2003)
 
-FillValue = -9.99e34
 
 # loop over years
 for year1 in years:
@@ -153,8 +156,11 @@ for year1 in years:
         for varname in ryf.data_vars:
             # Have to give all variables a useless FillValue attribute, otherwise xarray
             # makes it NaN and MOM does not like this
-            if "_FillValue" not in ryf[varname].encoding:
-                ryf[varname].encoding["_FillValue"] = FillValue
+            ryf[varname].encoding["_FillValue"] = (
+                ds[varname].encoding.get("_FillValue", FILLVALUE)
+                if varname in ds
+                else FILLVALUE
+            )
 
             # Only process variables with 3 or more dimensions
             if len(ryf[varname].shape) < 3:
@@ -175,7 +181,7 @@ for year1 in years:
         for dim in ryf.dims:
             # Have to give all dimensions a useless FillValue attribute, otherwise xarray
             # makes it NaN and MOM does not like this
-            ryf[dim].encoding["_FillValue"] = FillValue
+            ryf[dim].encoding["_FillValue"] = FILLVALUE
 
         # Make a new time dimension with no offset from origin (1900-01-01) so we don't get an offset after
         # changing calendar to noleap
@@ -192,6 +198,13 @@ for year1 in years:
             # 'calendar':'noleap'
         }
 
+        ryf[var].encoding.update(
+            {
+                "compression": COMPRESSION,
+                "complevel": COMPLEVEL,
+            }
+        )
+
         # Add some info about how the file was generated
         this_file = os.path.normpath(__file__)
         runcmd = f"python3 {os.path.basename(this_file)}"
@@ -200,7 +213,7 @@ for year1 in years:
 
         outfile = "RYF.{}.{}_{}.nc".format(var, year1, year2)
         print("Writing ", outfile)
-        ryf.to_netcdf(outfile, encoding={var: COMP_ENCODING})
+        ryf.to_netcdf(outfile)
 
         # Open the file again directly with the netCDF4 library to change the calendar attribute. xarray
         # has a hissy fit as this violates it's idea of CF encoding if it is done before writing the file above
