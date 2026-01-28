@@ -41,7 +41,6 @@ sys.path.append(str(path_root))
 from scripts_common import get_provenance_metadata, md5sum
 
 FILLVALUE = 1e20
-# COMP_ENCODING = {"complevel": 1, "compression": "zlib", "_FillValue": FILL_VALUE}
 # compression settings to use
 COMPLEVEL = 1
 COMPRESSION = "zlib"
