@@ -158,8 +158,7 @@ for year1 in years:
             # copy FillValue if it exists, otherwise use default
             source_ds = ds[baseyear]
             ryf[varname].encoding["_FillValue"] = (
-                source_ds[varname].encoding.get("_FillValue")
-                or FILLVALUE
+                source_ds[varname].encoding.get("_FillValue") or FILLVALUE
             )
 
             # Only process variables with 3 or more dimensions
