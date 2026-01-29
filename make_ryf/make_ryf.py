@@ -13,7 +13,7 @@
 #
 # Usage:
 # First start up an interactive job or an ARE session on Gadi to get enough memory:
-# qsub -I -q express -l mem=32GB -l storage=gdata/xp65+gdata/qv56+gdata/tm70+gdata/ua8 -l wd
+# qsub -I -q express -l mem=32GB -l storage=gdata/xp65+gdata/qv56+gdata/tm70 -l wd
 #
 # Then run the following to create the May-May repeat year forcings
 # module use /g/data/xp65/public/modules ; module load conda/analysis3
@@ -156,10 +156,10 @@ for year1 in years:
             # Have to give all variables a FillValue attribute, otherwise xarray
             # makes it NaN which causes floating point errors
             # copy FillValue if it exists, otherwise use default
+            source_ds = ds[baseyear]
             ryf[varname].encoding["_FillValue"] = (
-                ds[varname].encoding.get("_FillValue", FILLVALUE)
-                if varname in ds
-                else FILLVALUE
+                source_ds[varname].encoding.get("_FillValue")
+                or FILLVALUE
             )
 
             # Only process variables with 3 or more dimensions
