@@ -31,7 +31,8 @@
 import xarray as xr
 import esmpy
 from sklearn.neighbors import BallTree
-from numpy import deg2rad
+from scipy.ndimage import binary_dilation
+from numpy import deg2rad, reshape
 from copy import copy
 
 from pathlib import Path
@@ -47,8 +48,12 @@ TEMP_WEIGHTS_F = "temp_weights.nc"
 COMP_ENCODING = {"complevel": 1, "compression": "zlib"}  # compression settings to use
 
 
-def drof_remapping_weights(mesh_filename, weights_filename, global_attrs=None):
-    # We need to generate remapping weights for use in the mediator, such that the overall volume of runoff is conserved and no runoff is mapped onto land cells. Inside the mediator, the grid doesn't change as we run the mediator with the ocean grid (the DROF component does the remapping from JRA grid to mediator grid). There we use the same _mesh_file for the input and output mesh, however this same routine would work for differing input and output meshes
+def drof_remapping_weights(mesh_filename, weights_filename, nx, ny, global_attrs=None):
+    # We need to generate remapping weights for use in the mediator, such that the overall volume of runoff is conserved
+    # and no runoff is mapped onto land cells. Inside the mediator, the grid doesn't change as we run the mediator with
+    # the ocean grid (the DROF component does the remapping from JRA grid to mediator grid). Therefore we use the
+    # same _mesh_file for the input and output mesh, however this same function would work for differing input and
+    # output meshes
 
     model_mesh = esmpy.Mesh(
         filename=mesh_filename,
@@ -85,26 +90,37 @@ def drof_remapping_weights(mesh_filename, weights_filename, global_attrs=None):
 
     mod_mesh_ds = xr.open_dataset(mesh_filename)
 
-    # Find index for all ocean cells
-    mask_i = mod_mesh_ds.elementCount.where(mod_mesh_ds.elementMask, drop=True).astype(
-        "int"
-    )
+    if len(mod_mesh_ds.elementMask) != ny * nx:
+        raise RuntimeError("ny * nx does not equal number of elements in mesh file")
+
+    mask_2d = reshape(mod_mesh_ds.elementMask.values, (ny, nx))
+
+    # make new mask of land plus one adjacent cell of ocean
+    land_neighbours = binary_dilation(mask_2d == 0)
+
+    # target for runoff is ocean cells which are adjacent land
+    target_cells = (land_neighbours & mask_2d).flatten()
+
+    # Find index for all target cells
+    mask_target = (mod_mesh_ds.elementCount * target_cells).astype("int")
 
     # Haversine distances expect lat first, lon second, so index coordDim backwards
     center_coords_rad = deg2rad(mod_mesh_ds.centerCoords.isel(coordDim=[1, 0]))
 
     # Make a BallTree from the ocean cells
     mask_tree = BallTree(
-        center_coords_rad.isel(elementCount=mask_i), metric="haversine"
+        center_coords_rad.isel(elementCount=mask_target), metric="haversine"
     )
 
-    # Using the Tree, look up the nearest ocean cell to every destination grid cell in our weights file. Note our weights are indexed from 1 (i.e. Fortran style) but xarray starts from 0 (i.e. python style), so subract one from our destination grid cell indices.
+    # Using the Tree, look up the nearest ocean cell to every destination grid cell in our weights file. Note our
+    # weights are indexed from 1 (i.e. Fortran style) but xarray starts from 0 (i.e. python style), so subract one from
+    # our destination grid cell indices.
 
     ii = mask_tree.query(
         center_coords_rad.isel(elementCount=(weights_ds.row - 1)), return_distance=False
     )
 
-    new_row = mask_i[ii[:, 0]] + 1
+    new_row = mask_target[ii[:, 0]] + 1
 
     # Get the mesh element areas and adjust:
     # n.b. per CMEPS we are using the internally calculated areas, not the user provided ones.
@@ -150,6 +166,18 @@ def main():
         help="The path to the mesh file specifying the model grid and land mask.",
     )
     parser.add_argument(
+        "--nx",
+        type=int,
+        required=True,
+        help="Number of global cells in x directon",
+    )
+    parser.add_argument(
+        "--ny",
+        type=int,
+        required=True,
+        help="Number of global cells in y directon",
+    )
+    parser.add_argument(
         "--weights_filename",
         type=str,
         required=True,
@@ -163,11 +191,13 @@ def main():
     this_file = os.path.normpath(__file__)
 
     # Add some info about how the file was generated
-    runcmd = f"python3 {os.path.basename(this_file)} --mesh-filename={mesh_filename} --weights_filename={weights_filename} "
+    runcmd = f"python3 {os.path.basename(this_file)} --mesh-filename={mesh_filename} --nx={args.nx} --ny={args.ny} --weights_filename={weights_filename} "
 
     global_attrs = {"history": get_provenance_metadata(this_file, runcmd)}
 
-    drof_remapping_weights(mesh_filename, weights_filename, global_attrs)
+    drof_remapping_weights(
+        mesh_filename, weights_filename, args.nx, args.ny, global_attrs
+    )
 
     return True
 
