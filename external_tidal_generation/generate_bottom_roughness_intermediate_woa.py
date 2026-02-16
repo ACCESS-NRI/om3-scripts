@@ -25,8 +25,8 @@
 # 3) Compute Gaussian-weighted mean depth from high-resolution bathymetry (synbath)
 #    - For each WOA grid point with valid lambda1, samples the high-res bathymetry on a
 #      polar stencil whose radius scales with lambda1.
-#    - Applies a Gaussian-like weighting to produce a smoothed mean depth
-#      of the mode-1 internal tide length scale.
+#    - Applies a Gaussian-like weighting to produce a mean depth smoothed
+#      on the mode-1 internal tide length scale.
 #
 # 4) Compute depth variance (h^2) relative to the smoothed mean depth
 #    - Re-samples synbath on the same polar stencil.
@@ -166,7 +166,7 @@ def bilinear_interp(
     lat_y: np.ndarray,
 ) -> np.ndarray:
     """
-    Bilinear on regular grid - if any corner is NaN -> output NaN.
+    Bilinear interpolation on regular grid - if any corner is NaN -> output NaN.
     """
     ny, nx = field.shape
 
