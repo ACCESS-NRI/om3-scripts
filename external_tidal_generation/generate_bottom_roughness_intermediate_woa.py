@@ -93,7 +93,8 @@ def coriolis_f(lat: xr.DataArray) -> xr.DataArray:
     Compute Coriolis parameter f at given latitudes.
     Units: s^-1
     """
-    Omega = 2 * np.pi / (24 * 3600)
+    sidereal_day = 86164.0905  # sidereal day in seconds
+    Omega = 2 * np.pi / sidereal_day  # Earth's angular velocity
     return 2 * Omega * np.sin(np.deg2rad(lat))
 
 
