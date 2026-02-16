@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # =========================================================================================
-# Bottom roughness for internal-tide generation (h^2) from WOA23 + synbath
+# Bottom roughness for internal-tide generation (h^2) from WOA + Synbath
 #
 # This script builds a bottom-roughness field intended for parameterising internal-tide
 # generation in ocean model configurations. The roughness is defined relative to bathymetry
@@ -14,7 +14,7 @@
 # What the script does
 # --------------------
 # 1) Compute buoyancy frequency squared (N^2)
-#    - Reads WOA23 temperature and salinity climatologies.
+#    - Reads WOA temperature and salinity climatologies.
 #    - Uses TEOS-10 (gsw) to compute N^2 on vertical mid-levels.
 #
 # 2) Compute the mode-1 internal tide wavelength scale (lambda1)
@@ -42,8 +42,8 @@
 #
 # Usage:
 #   mpirun -n <ranks> python3 generate_bottom_roughness_intermediate_woa.py \
-#       --woa23_temp_file /path/to/woa23_temp.nc \
-#       --woa23_salt_file /path/to/woa23_salt.nc \
+#       --woa_temp_file /path/to/woa_temp.nc \
+#       --woa_salt_file /path/to/woa_salt.nc \
 #       --synbath_file    /path/to/SYNBATH.nc \
 #       --chunk_lat 800 \
 #       --chunk_lon 1600 \
@@ -531,19 +531,19 @@ def compute_mean_depth_and_var_points(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Compute a grid-independent bottom roughness by computing N^2 from WOA23 T/S, estimating a mode-1 internal-tide wavelength, and using it to smooth high-resolution bathymetry before evaluating depth variance."
+        description="Compute a grid-independent bottom roughness by computing N^2 from WOA T/S, estimating a mode-1 internal-tide wavelength, and using it to smooth high-resolution bathymetry before evaluating depth variance."
     )
     parser.add_argument(
-        "--woa23_temp_file",
+        "--woa_temp_file",
         type=str,
         required=True,
-        help="Path to WOA23 temperature file.",
+        help="Path to WOA temperature file (annual mean recommended).",
     )
     parser.add_argument(
-        "--woa23_salt_file",
+        "--woa_salt_file",
         type=str,
         required=True,
-        help="Path to WOA23 salinity file.",
+        help="Path to WOA salinity file (annual mean recommended).",
     )
     parser.add_argument(
         "--synbath_file",
@@ -593,8 +593,8 @@ def main():
     rank = comm.Get_rank()
 
     if rank == 0:
-        temp_ds = xr.open_dataset(args.woa23_temp_file, drop_variables="time")
-        salt_ds = xr.open_dataset(args.woa23_salt_file, drop_variables="time")
+        temp_ds = xr.open_dataset(args.woa_temp_file, drop_variables="time")
+        salt_ds = xr.open_dataset(args.woa_salt_file, drop_variables="time")
 
         sea_water_temp = temp_ds["t_an"].squeeze().transpose("depth", "lat", "lon")
         sea_water_salt = salt_ds["s_an"].squeeze().transpose("depth", "lat", "lon")
@@ -732,8 +732,8 @@ def main():
         this_file = os.path.normpath(__file__)
         runcmd = (
             f"mpirun -n $PBS_NCPUS python3 {os.path.basename(this_file)} "
-            f"--woa23_temp_file={args.woa23_temp_file} "
-            f"--woa23_salt_file={args.woa23_salt_file} "
+            f"--woa_temp_file={args.woa_temp_file} "
+            f"--woa_salt_file={args.woa_salt_file} "
             f"--synbath_file={args.synbath_file} "
             f"--chunk-lat={args.chunk_lat} "
             f"--chunk-lon={args.chunk_lon} "
@@ -748,8 +748,8 @@ def main():
         history = get_provenance_metadata(this_file, runcmd)
         global_attrs = {"history": history}
         file_hashes = [
-            f"{args.woa23_temp_file} (md5 hash: {md5sum(args.woa23_temp_file)})",
-            f"{args.woa23_salt_file} (md5 hash: {md5sum(args.woa23_salt_file)})",
+            f"{args.woa_temp_file} (md5 hash: {md5sum(args.woa_temp_file)})",
+            f"{args.woa_salt_file} (md5 hash: {md5sum(args.woa_salt_file)})",
             f"{args.synbath_file} (md5 hash: {md5sum(args.synbath_file)})",
         ]
         global_attrs["inputFile"] = ", ".join(file_hashes)

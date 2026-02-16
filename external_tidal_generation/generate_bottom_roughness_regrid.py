@@ -6,7 +6,7 @@
 # Bottom roughness regridding for internal-tide generation (h^2)
 #
 # This script regrids a precomputed bottom-roughness field (h^2), generated on the
-# regular WOA23 lat-lon grid onto a MOM6 model grid using xesmf.
+# regular WOA lat-lon grid onto a MOM6 model grid using xesmf.
 #
 # It is intended to be run after `generate_intermediate_bottom_roughness_intermediate_woa.py`,
 # which computes the WOA-based intermediates.
