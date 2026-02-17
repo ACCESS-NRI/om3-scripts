@@ -215,7 +215,7 @@ def main():
     parser.add_argument(
         "--periodic",
         action="store_true",
-        help="Whether to use periodic regridding.",
+        help="Whether to use periodic regridding in x direction (longitude).",
     )
     parser.add_argument(
         "--output_file",
