@@ -139,13 +139,13 @@ class PolarWeights:
     def build(cls, nradial: int, ntheta: int):
         nr = 2 * nradial + 1
         r = np.linspace(-1, 1, nr)
-        theta = np.linspace(0, 2 * np.pi, ntheta, endpoint=False)
+        theta = np.linspace(0, np.pi, ntheta, endpoint=False)
 
         cos_t = np.cos(theta)[None, :]
         sin_t = np.sin(theta)[None, :]
         r_col = r[:, None]
 
-        weight = np.exp(-((2 * r_col) ** 2)) * (2 * np.pi) * np.abs(r_col)
+        weight = np.exp(-((2 * r_col) ** 2)) * np.pi * np.abs(r_col)
         weight = np.broadcast_to(weight, (nr, ntheta))
 
         return cls(
