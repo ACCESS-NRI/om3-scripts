@@ -137,7 +137,9 @@ class PolarWeights:
 
     @classmethod
     def build(cls, nradial: int, ntheta: int):
-        nr = 2 * nradial + 1
+        # use an even number of radial samples so there is no point exactly at r=0,
+        # hence the innermost ring then fills the central disc.
+        nr = 2 * nradial
         r = np.linspace(-1, 1, nr)
         theta = np.linspace(0, np.pi, ntheta, endpoint=False)
 
