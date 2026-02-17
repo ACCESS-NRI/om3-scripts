@@ -652,7 +652,7 @@ def main():
         lat_np = lat.values
         lambda1_np = da_lambda1.values
 
-        print("loading high-res topo")
+        print(f"loading high-res topo from {args.synbath_file}")
         ds_meta = xr.open_dataset(args.synbath_file, decode_times=False)
         synbath_lon_np = ds_meta["lon"].values
         synbath_lat_np = ds_meta["lat"].values
