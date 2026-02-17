@@ -47,7 +47,7 @@
 #       --synbath_file    /path/to/SYNBATH.nc \
 #       --chunk_lat 800 \
 #       --chunk_lon 1600 \
-#       --nmodes 100 \
+#       --nradial 100 \
 #       --ntheta 180 \
 #       --omega 1.405189e-4 # M2 \
 #       --woa_intermediate_file woa_intermediates.nc
@@ -136,8 +136,8 @@ class PolarWeights:
     weight_sum: float
 
     @classmethod
-    def build(cls, nmodes: int, ntheta: int):
-        nr = 2 * nmodes + 1
+    def build(cls, nradial: int, ntheta: int):
+        nr = 2 * nradial + 1
         r = np.linspace(-1, 1, nr)
         theta = np.linspace(0, 2 * np.pi, ntheta, endpoint=False)
 
@@ -319,7 +319,7 @@ def compute_mean_depth_and_var_points(
     lon_np: np.ndarray,
     lat_np: np.ndarray,
     lambda1_np: np.ndarray,
-    nmodes: int,
+    nradial: int,
     ntheta: int,
     RE: float,
     synbath_file: str,
@@ -361,7 +361,7 @@ def compute_mean_depth_and_var_points(
     print(f"[Rank {rank}] local tasks = {n_local}")
 
     # Precompute polar weights
-    polar = PolarWeights.build(nmodes, ntheta)
+    polar = PolarWeights.build(nradial, ntheta)
 
     # Load synbath topo
     ds_topog = xr.open_dataset(
@@ -553,7 +553,7 @@ def main():
         help="Path to synthetic bathymetry file.",
     )
     parser.add_argument(
-        "--nmodes", type=int, default=100, help="Number of modes for polar weights."
+        "--nradial", type=int, default=100, help="Number of radial divisions for polar weights."
     )
     parser.add_argument(
         "--ntheta",
@@ -675,7 +675,7 @@ def main():
         lon_np=lon_np,
         lat_np=lat_np,
         lambda1_np=lambda1_np,
-        nmodes=args.nmodes,
+        nradial=args.nradial,
         ntheta=args.ntheta,
         RE=args.earth_radius,
         synbath_file=args.synbath_file,
@@ -720,7 +720,7 @@ def main():
                 ),
             },
             attrs={
-                "nmodes": args.nmodes,
+                "nradial": args.nradial,
                 "ntheta": args.ntheta,
                 "earth_radius_m": args.earth_radius,
                 "omega_rad_s": args.omega,
@@ -738,7 +738,7 @@ def main():
             f"--synbath_file={args.synbath_file} "
             f"--chunk-lat={args.chunk_lat} "
             f"--chunk-lon={args.chunk_lon} "
-            f"--nmodes={args.nmodes} "
+            f"--nradial={args.nradial} "
             f"--ntheta={args.ntheta} "
             f"--earth-radius={args.earth_radius} "
             f"--omega={args.omega} "
