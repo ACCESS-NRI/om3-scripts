@@ -562,7 +562,7 @@ def main():
         help="Number of theta divisions for polar weights.",
     )
     parser.add_argument(
-        "--earth_radius", type=float, default=6371000.0, help="Earth radius in meters."
+        "--earth_radius", type=float, default=6.371229E+06, help="Earth radius in meters."
     )
     parser.add_argument(
         "--chunk_lat", type=int, default=800, help="Latitude chunk size for processing."
