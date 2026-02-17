@@ -146,7 +146,7 @@ def regrid_depth_var_to_mom6(
     target_ds["h2"] = regridder(depth_var)
     target_ds["h2"] = target_ds["h2"].fillna(0.0)
 
-    # tidy up attrs
+    # tidy up vars
     target_ds = target_ds.drop_vars(["lon_b", "lat_b", "mask"])
 
     tmp_attrs = {
