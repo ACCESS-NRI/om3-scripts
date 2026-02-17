@@ -594,7 +594,9 @@ def main():
     rank = comm.Get_rank()
 
     if rank == 0:
+        print(f"loading temperature from {args.woa_temp_file}")
         temp_ds = xr.open_dataset(args.woa_temp_file, drop_variables="time")
+        print(f"loading salinity from {args.woa_salt_file}")
         salt_ds = xr.open_dataset(args.woa_salt_file, drop_variables="time")
 
         sea_water_temp = temp_ds["t_an"].squeeze().transpose("depth", "lat", "lon")
