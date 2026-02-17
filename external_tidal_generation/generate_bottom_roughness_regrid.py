@@ -242,8 +242,8 @@ def main():
     this_file = os.path.normpath(__file__)
     runcmd = (
         f"python3 {os.path.basename(this_file)} "
-        f"--topog-file={args.topog_file} "
-        f"--hgrid-file={args.hgrid_file} "
+        f"--topog_file={args.topog_file} "
+        f"--hgrid_file={args.hgrid_file} "
         f"--woa_intermediate_file={args.woa_intermediate_file} "
         f"--output_file={args.output_file} "
         f"--method={args.method} "
