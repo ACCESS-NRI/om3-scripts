@@ -161,7 +161,7 @@ def regrid_depth_var_to_mom6(
         "h2": {
             "long_name": "Bottom roughness squared (h^2) for internal tide generation",
             "units": "m^2",
-            "regrid_method": "conservative_normed",
+            "regrid_method": method,
         },
     }
 
@@ -197,7 +197,20 @@ def main():
         "--method",
         type=str,
         default="conservative_normed",
-        help="Regridding method to use.",
+        choices=[
+            "nearest_s2d",
+            "nearest_d2s",
+            "bilinear",
+            "conservative",
+            "conservative_normed",
+            "patch",
+        ],
+        help=(
+            "Regridding method to use: "
+            "Supported xESMF methods include: conservative, conservative_normed, "
+            "bilinear, nearest_s2d, nearest_d2s, and patch. "
+            "Default is conservative_normed."
+        ),
     )
     parser.add_argument(
         "--periodic",
