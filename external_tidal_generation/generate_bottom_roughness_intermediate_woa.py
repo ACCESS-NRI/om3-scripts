@@ -277,6 +277,60 @@ def read_lonbuffer_patch(
     return h
 
 
+def sample_synbath_polar_depth(
+    lonm: float,
+    latm: float,
+    radius_m: float,
+    polar: PolarWeights,
+    deg_per_m_lon: float,
+    deg_per_m_lat: float,
+    topog: xr.DataArray,
+    synbath_lon_buf0: float,
+    synbath_lat0: float,
+    synbath_res: float,
+    synbath_nlon: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    """
+    Build polar stencil points around (lonm, latm) with physical radius radius_m,
+    then bilinearly interpolate sample synbath depth `topog` at those points.
+
+    It returns None if no synbath patch overlaps the stencil bounds.
+    """
+    # Polar sampling points
+    rm = (radius_m * polar.r)[:, None]
+    x = rm * polar.cos_t
+    y = rm * polar.sin_t
+
+    # Convert meters -> degrees
+    lon_x = lonm + x * deg_per_m_lon
+    lat_y = latm + y * deg_per_m_lat
+
+    # Patch bounds in degrees
+    lon_extent = radius_m * deg_per_m_lon
+    lat_extent = radius_m * deg_per_m_lat
+
+    lon_min = lonm - lon_extent - 2 * abs(synbath_res)
+    lon_max = lonm + lon_extent + 2 * abs(synbath_res)
+    lat_min = latm - lat_extent - 2 * abs(synbath_res)
+    lat_max = latm + lat_extent + 2 * abs(synbath_res)
+
+    i0_buf = int(np.floor((lon_min - synbath_lon_buf0) / synbath_res))
+    i1_buf = int(np.ceil((lon_max - synbath_lon_buf0) / synbath_res))
+    j0 = int(np.floor((lat_min - synbath_lat0) / synbath_res))
+    j1 = int(np.ceil((lat_max - synbath_lat0) / synbath_res))
+
+    h_patch = read_lonbuffer_patch(topog, j0, j1, i0_buf, i1_buf, synbath_nlon)
+    if h_patch is None:
+        return None
+
+    lon_patch0 = synbath_lon_buf0 + i0_buf * synbath_res
+    lat_patch0 = synbath_lat0 + j0 * synbath_res
+
+    depth = bilinear_interp(h_patch, lon_patch0, lat_patch0, synbath_res, lon_x, lat_y)
+
+    return lon_x, lat_y, depth
+
+
 def split_rows(nj: int, size: int, rank: int) -> tuple[int, int, int, int, int]:
     """
     Compute a simple block+remainder row decomposition.
@@ -403,39 +457,23 @@ def compute_mean_depth_and_var_points(
 
         deg_per_m_lon = deg_per_m_lon_by_j[j]
 
-        # Polar sampling points
-        rm = (d * polar.r)[:, None]
-        x = rm * polar.cos_t
-        y = rm * polar.sin_t
-
-        # Convert meters -> degrees
-        lon_x = lonm + x * deg_per_m_lon
-        lat_y = latm + y * deg_per_m_lat
-
-        # Patch bounds in degrees
-        lon_extent = d * deg_per_m_lon
-        lat_extent = d * deg_per_m_lat
-        lon_min = lonm - lon_extent - 2 * abs(synbath_res)
-        lon_max = lonm + lon_extent + 2 * abs(synbath_res)
-        lat_min = latm - lat_extent - 2 * abs(synbath_res)
-        lat_max = latm + lat_extent + 2 * abs(synbath_res)
-
-        i0_buf = int(np.floor((lon_min - synbath_lon_buf0) / synbath_res))
-        i1_buf = int(np.ceil((lon_max - synbath_lon_buf0) / synbath_res))
-        j0 = int(np.floor((lat_min - synbath_lat0) / synbath_res))
-        j1 = int(np.ceil((lat_max - synbath_lat0) / synbath_res))
-
-        h_patch = read_lonbuffer_patch(topog, j0, j1, i0_buf, i1_buf, synbath_nlon)
-        local_idx_mean_depth[n] = idx1d
-        if h_patch is None:
-            continue
-
-        lon_patch0 = synbath_lon_buf0 + i0_buf * synbath_res
-        lat_patch0 = synbath_lat0 + j0 * synbath_res
-
-        depth = bilinear_interp(
-            h_patch, lon_patch0, lat_patch0, synbath_res, lon_x, lat_y
+        sample = sample_synbath_polar_depth(
+            lonm=lonm,
+            latm=latm,
+            radius_m=d,
+            polar=polar,
+            deg_per_m_lon=deg_per_m_lon,
+            deg_per_m_lat=deg_per_m_lat,
+            topog=topog,
+            synbath_lon_buf0=synbath_lon_buf0,
+            synbath_lat0=synbath_lat0,
+            synbath_res=synbath_res,
+            synbath_nlon=synbath_nlon,
         )
+
+        _, _, depth = sample
+        if depth is None:
+            continue
 
         num = np.nansum(depth * polar.weight)
         if np.isfinite(num):
@@ -463,44 +501,31 @@ def compute_mean_depth_and_var_points(
 
     for n, idx1d in enumerate(local_tasks):
         j, i = divmod(int(idx1d), ni)
-        lonm = float(lon_np[i])
-        latm = float(lat_np[j])
-        d = float(lambda1_np[j, i])
+        lonm = lon_np[i]
+        latm = lat_np[j]
+        d = lambda1_np[j, i]
 
         local_idx_var_depth[n] = idx1d
 
-        deg_per_m_lon = float(deg_per_m_lon_by_j[j])
+        deg_per_m_lon = deg_per_m_lon_by_j[j]
 
-        rm = (d * polar.r)[:, None]
-        x = rm * polar.cos_t
-        y = rm * polar.sin_t
-
-        lon_x = lonm + x * deg_per_m_lon
-        lat_y = latm + y * deg_per_m_lat
-
-        # Interpolate synbath depth at polar points - same as the step for mean depth
-        lon_extent = d * deg_per_m_lon
-        lat_extent = d * deg_per_m_lat
-
-        lon_min = lonm - lon_extent - 2.0 * abs(synbath_res)
-        lon_max = lonm + lon_extent + 2.0 * abs(synbath_res)
-        lat_min = latm - lat_extent - 2.0 * abs(synbath_res)
-        lat_max = latm + lat_extent + 2.0 * abs(synbath_res)
-
-        i0_buf = int(np.floor((lon_min - synbath_lon_buf0) / synbath_res))
-        i1_buf = int(np.ceil((lon_max - synbath_lon_buf0) / synbath_res))
-        j0 = int(np.floor((lat_min - synbath_lat0) / synbath_res))
-        j1 = int(np.ceil((lat_max - synbath_lat0) / synbath_res))
-
-        h_patch = read_lonbuffer_patch(topog, j0, j1, i0_buf, i1_buf, synbath_nlon)
-        if h_patch is None:
-            continue
-
-        lon_patch0 = synbath_lon_buf0 + i0_buf * synbath_res
-        lat_patch0 = synbath_lat0 + j0 * synbath_res
-        depth = bilinear_interp(
-            h_patch, lon_patch0, lat_patch0, synbath_res, lon_x, lat_y
+        sample = sample_synbath_polar_depth(
+            lonm=lonm,
+            latm=latm,
+            radius_m=d,
+            polar=polar,
+            deg_per_m_lon=deg_per_m_lon,
+            deg_per_m_lat=deg_per_m_lat,
+            topog=topog,
+            synbath_lon_buf0=synbath_lon_buf0,
+            synbath_lat0=synbath_lat0,
+            synbath_res=synbath_res,
+            synbath_nlon=synbath_nlon,
         )
+
+        lon_x, lat_y, depth = sample
+        if depth is None:
+            continue
 
         # Interpolate mean_depth to polar points
         lon_x_wrapped = lon_x.copy()
