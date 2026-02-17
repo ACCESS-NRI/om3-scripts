@@ -8,7 +8,7 @@
 # This script regrids a precomputed bottom-roughness field (h^2), generated on the
 # regular WOA lat-lon grid onto a MOM6 model grid using xesmf.
 #
-# It is intended to be run after `generate_intermediate_bottom_roughness_intermediate_woa.py`,
+# It is intended to be run after `generate_bottom_roughness_intermediate_woa.py`,
 # which computes the WOA-based intermediates.
 #
 # The regridding step is separated into this standalone script to avoid known issues
