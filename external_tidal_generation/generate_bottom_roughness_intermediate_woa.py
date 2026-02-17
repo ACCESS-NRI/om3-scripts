@@ -553,7 +553,10 @@ def main():
         help="Path to synthetic bathymetry file.",
     )
     parser.add_argument(
-        "--nradial", type=int, default=100, help="Number of radial divisions for polar weights."
+        "--nradial",
+        type=int,
+        default=100,
+        help="Number of radial divisions for polar weights.",
     )
     parser.add_argument(
         "--ntheta",
@@ -562,7 +565,10 @@ def main():
         help="Number of theta divisions for polar weights.",
     )
     parser.add_argument(
-        "--earth_radius", type=float, default=6.371229E+06, help="Earth radius in meters."
+        "--earth_radius",
+        type=float,
+        default=6.371229e06,
+        help="Earth radius in meters.",
     )
     parser.add_argument(
         "--chunk_lat", type=int, default=800, help="Latitude chunk size for processing."
