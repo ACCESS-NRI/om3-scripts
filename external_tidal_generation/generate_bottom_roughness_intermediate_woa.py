@@ -726,8 +726,6 @@ def main():
                 "omega_rad_s": args.omega,
             },
         )
-        ds_woa_output.to_netcdf(args.woa_intermediate_file)
-        print(f"Output written to {args.woa_intermediate_file}")
 
         # Add provenance metadata and MD5 hashes for input files.
         this_file = os.path.normpath(__file__)
