@@ -169,6 +169,14 @@ def bilinear_interp(
 ) -> np.ndarray:
     """
     Bilinear interpolation on regular grid - if any corner is NaN -> output NaN.
+
+    This is a custom implementation of nan-preserving bilinear interpolation on a regular lon/lat grid.
+    It is used in two places in this workflow:
+    - interpolate high-res bathymetry (synbath) from a small lon/lat patch (`h_patch`) onto the polar stencil points (lon_x, lat_y)
+    - interpolate the coarse grid mean depth on the WOA grid onto the same polar stencil points
+
+    It returns the interpolated values with the same shape as lon_x/lat_y.
+    Points outside the field bounds or with any nan corners will be set to nan.
     """
     ny, nx = field.shape
 
