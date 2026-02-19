@@ -83,6 +83,8 @@ import xarray as xr
 import gsw
 from dataclasses import dataclass
 
+from scipy import ndimage
+
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 from scripts_common import get_provenance_metadata, md5sum
@@ -455,6 +457,8 @@ def compute_mean_depth_and_var_points(
         latm = lat_np[j]
         d = float(lambda1_np[j, i])
 
+        local_idx_mean_depth[n] = idx1d  # store global index for gathering back to rank 0
+
         deg_per_m_lon = deg_per_m_lon_by_j[j]
 
         sample = sample_synbath_polar_depth(
@@ -475,8 +479,6 @@ def compute_mean_depth_and_var_points(
             continue
 
         _, _, depth = sample
-        if depth is None:
-            continue
 
         num = np.nansum(depth * polar.weight)
         if np.isfinite(num):
@@ -530,8 +532,6 @@ def compute_mean_depth_and_var_points(
             continue
 
         lon_x, lat_y, depth = sample
-        if depth is None:
-            continue
 
         # Interpolate mean_depth to polar points
         lon_x_wrapped = lon_x.copy()
