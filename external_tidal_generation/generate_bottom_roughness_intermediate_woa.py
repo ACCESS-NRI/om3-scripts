@@ -457,7 +457,9 @@ def compute_mean_depth_and_var_points(
         latm = lat_np[j]
         d = float(lambda1_np[j, i])
 
-        local_idx_mean_depth[n] = idx1d  # store global index for gathering back to rank 0
+        local_idx_mean_depth[n] = (
+            idx1d  # store global index for gathering back to rank 0
+        )
 
         deg_per_m_lon = deg_per_m_lon_by_j[j]
 
