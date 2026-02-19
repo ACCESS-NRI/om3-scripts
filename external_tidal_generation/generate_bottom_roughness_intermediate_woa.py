@@ -471,6 +471,9 @@ def compute_mean_depth_and_var_points(
             synbath_nlon=synbath_nlon,
         )
 
+        if sample is None:
+            continue
+
         _, _, depth = sample
         if depth is None:
             continue
@@ -522,6 +525,9 @@ def compute_mean_depth_and_var_points(
             synbath_res=synbath_res,
             synbath_nlon=synbath_nlon,
         )
+
+        if sample is None:
+            continue
 
         lon_x, lat_y, depth = sample
         if depth is None:
