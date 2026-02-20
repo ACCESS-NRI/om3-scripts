@@ -483,8 +483,10 @@ def compute_mean_depth_and_var_points(
         _, _, depth = sample
 
         num = np.nansum(depth * polar.weight)
-        if np.isfinite(num):
-            local_val_mean_depth[n] = -num / polar.weight_sum
+        finite_depth = np.isfinite(depth)
+        valid_weight_sum = np.sum(polar.weight[finite_depth])
+        if np.isfinite(num) and valid_weight_sum > 0:
+            local_val_mean_depth[n] = -num / valid_weight_sum
 
         if print_every and ((n + 1) % print_every == 0):
             print(f"[Rank {rank}] {n+1}/{n_local} tasks done")
@@ -556,8 +558,10 @@ def compute_mean_depth_and_var_points(
         variance = (depth - depth_m_neg) ** 2
 
         num = np.nansum(variance * polar.weight)
-        if np.isfinite(num):
-            local_val_var_depth[n] = num / polar.weight_sum
+        finite_var = np.isfinite(variance)
+        valid_weight_sum = np.sum(polar.weight[finite_var])
+        if np.isfinite(num) and valid_weight_sum > 0:
+            local_val_var_depth[n] = num / valid_weight_sum
 
         if print_every and ((n + 1) % print_every == 0):
             print(f"[Rank {rank}] {n+1}/{n_local} tasks done for variance")
