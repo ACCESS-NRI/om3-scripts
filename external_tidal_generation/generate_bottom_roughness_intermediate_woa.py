@@ -149,7 +149,9 @@ class PolarWeights:
         sin_t = np.sin(theta)[None, :]
         r_col = r[:, None]
 
-        weight = np.exp(-((2 * r_col) ** 2)) * np.pi * np.abs(r_col)  # NB: scaling on r gives narrow peak (variance of 1/8)
+        weight = (
+            np.exp(-((2 * r_col) ** 2)) * np.pi * np.abs(r_col)
+        )  # NB: scaling on r gives narrow peak (variance of 1/8)
         weight = np.broadcast_to(weight, (nr, ntheta))
 
         return cls(
@@ -554,7 +556,9 @@ def compute_mean_depth_and_var_points(
 
     # Precompute per-lat deg_per_m_lon for speed
     coslat = np.cos(np.deg2rad(lat_np))
-    deg_per_m_lon_by_j = 180 / (np.pi * RE * coslat)  # NB: fails if grid includes north or south pole
+    deg_per_m_lon_by_j = 180 / (
+        np.pi * RE * coslat
+    )  # NB: fails if grid includes north or south pole
 
     # Compute local mean depth
     local_idx_mean_depth = np.empty(n_local, dtype=np.int64)
