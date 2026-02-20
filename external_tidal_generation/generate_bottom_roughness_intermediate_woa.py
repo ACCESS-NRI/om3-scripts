@@ -557,7 +557,7 @@ def compute_mean_depth_and_var_points(
 
     # Precompute per-lat deg_per_m_lon for speed
     coslat = np.cos(np.deg2rad(lat_np))
-    deg_per_m_lon_by_j = 180 / (np.pi * RE * coslat)
+    deg_per_m_lon_by_j = 180 / (np.pi * RE * coslat)  # NB: fails if grid includes north or south pole
 
     # Compute local mean depth
     local_idx_mean_depth = np.empty(n_local, dtype=np.int64)
