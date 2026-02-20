@@ -136,7 +136,6 @@ class PolarWeights:
     cos_t: np.ndarray
     sin_t: np.ndarray
     weight: np.ndarray
-    weight_sum: float
 
     @classmethod
     def build(cls, nradial: int, ntheta: int):
@@ -158,7 +157,6 @@ class PolarWeights:
             cos_t=cos_t,
             sin_t=sin_t,
             weight=weight,
-            weight_sum=np.sum(weight),
         )
 
 
