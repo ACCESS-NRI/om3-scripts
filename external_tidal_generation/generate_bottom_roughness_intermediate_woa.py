@@ -84,6 +84,8 @@ import gsw
 from dataclasses import dataclass
 
 from scipy import ndimage
+import scipy.sparse as sp
+import scipy.sparse.linalg as spla
 
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
@@ -852,10 +854,10 @@ def main():
     if rank == 0:
         # Smooth-fill nans in depth_var on the WOA grid
         mask = lambda1_np > 0
-        mean_depth_filled = laplace_smooth(mean_depth.values, mask, erosion_iters=2)
+        mean_depth_filled = laplace_smooth(mean_depth, mask, erosion_iters=2)
         mean_depth = mean_depth_filled
 
-        depth_var_filled = laplace_smooth(depth_var.values, mask, erosion_iters=2)
+        depth_var_filled = laplace_smooth(depth_var, mask, erosion_iters=2)
         depth_var = depth_var_filled
 
         ds_woa_output = xr.Dataset(
