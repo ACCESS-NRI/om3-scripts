@@ -851,7 +851,7 @@ def main():
 
     if rank == 0:
         # Smooth-fill nans in depth_var on the WOA grid
-        mask = (lambda1_np > 0)
+        mask = lambda1_np > 0
         mean_depth_filled = laplace_smooth(mean_depth.values, mask, erosion_iters=2)
         mean_depth = mean_depth_filled
 
