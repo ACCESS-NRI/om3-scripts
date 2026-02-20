@@ -467,30 +467,14 @@ def laplace_smooth(
     field: np.ndarray, mask: np.ndarray, erosion_iters: int = 2
 ) -> np.ndarray:
     """
-    Smooth field over wet cells only by applying a Laplace smoother iteratively.
-    stage1: Fill missing values over the original wet mask using a Laplacian solver.
-            This ensures coastal nans gets filled and the field is continuous across the entire ocean domain.
-    stage2: Erode the wet mask inward by `erosion_iters` number of grid cells, and apply the
-            Laplacian solver again over this reduced (interior) region. This step smooths the interior.
-
-    erosion_iters: Number of grid cells by which to shrink the wet mask before the 2nd smoothing stage.
-                   Larger values reduce coastal influence more strongly.
+    Smooth field over wet cells only by applying a Laplace smoother.
+    Fill missing values over the original wet mask using a Laplacian solver.
+    This ensures coastal nans gets filled and the field is continuous across the entire ocean domain.
     """
     wet = mask > 0
-    stage1 = fill_missing_data_laplace(field, mask=wet, periodic_lon=True)
+    field_filled = fill_missing_data_laplace(field, mask=wet, periodic_lon=True)
 
-    if erosion_iters <= 0:
-        return np.where(wet, stage1, np.nan)
-
-    eroded_mask = ndimage.binary_erosion(wet, iterations=erosion_iters)
-
-    stage2_interior = fill_missing_data_laplace(
-        stage1, mask=eroded_mask, periodic_lon=True
-    )
-
-    out = stage1.copy()
-    out[eroded_mask] = stage2_interior[eroded_mask]  # only overwrite interior
-    return np.where(wet, out, np.nan)
+    return np.where(wet, field_filled, np.nan)
 
 
 def compute_mean_depth_and_var_points(
