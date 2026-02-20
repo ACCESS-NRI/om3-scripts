@@ -330,6 +330,8 @@ def sample_synbath_polar_depth(
     lon_patch0 = synbath_lon_buf0 + i0_buf * synbath_res
     lat_patch0 = synbath_lat0 + j0 * synbath_res
 
+    # depth is synbath interpolated onto lon_x, lat_y.
+    # NB: depth is nan at points on land or beyond the northern (or southern) edge of the synbath grid
     depth = bilinear_interp(h_patch, lon_patch0, lat_patch0, synbath_res, lon_x, lat_y)
 
     return lon_x, lat_y, depth
