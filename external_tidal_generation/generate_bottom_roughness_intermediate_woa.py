@@ -151,7 +151,7 @@ class PolarWeights:
         sin_t = np.sin(theta)[None, :]
         r_col = r[:, None]
 
-        weight = np.exp(-((2 * r_col) ** 2)) * np.pi * np.abs(r_col)
+        weight = np.exp(-((2 * r_col) ** 2)) * np.pi * np.abs(r_col)  # NB: scaling on r gives narrow peak (variance of 1/8)
         weight = np.broadcast_to(weight, (nr, ntheta))
 
         return cls(
