@@ -129,8 +129,7 @@ def compute_lambda(
 @dataclass
 class PolarWeights:
     """
-    The depth seen by a "mode 1" internal tide at polar coords (r, theta)
-    around a point with Gaussian weights.
+    Define a set of Gaussian- and area-weighted points on a polar grid of unit radius. The Gaussian has variance 1/8 in these units, giving a narrow peak and a near-zero value at the boundary.
     """
 
     r: np.ndarray
