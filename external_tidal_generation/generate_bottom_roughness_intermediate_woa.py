@@ -392,7 +392,7 @@ def fill_missing_data_laplace(
     This is adapted from https://github.com/ACCESS-NRI/om3-scripts/blob/main/chlorophyll/chl_climatology_and_fill.py,
     which originally adapted from https://github.com/adcroft/interp_and_fill/blob/main/Interpolate%20and%20fill%20SeaWIFS.ipynb
 
-    This implementation otherwise assumes a regular lat/lon grid tri-polar (WOA),
+    This implementation otherwise assumes a regular lat/lon grid (WOA),
     hence tripolar topology is intentionally not handled here.
 
     Periodic boundary conditions are supported in longitude only (global configuration).
