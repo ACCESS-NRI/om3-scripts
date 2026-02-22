@@ -13,6 +13,7 @@
 #
 # The regridding step is separated into this standalone script to avoid known issues
 # when combining xesmf regridding with MPI-based workflows in the analysis environment.
+# https://github.com/ACCESS-NRI/ACCESS-Analysis-Conda/issues/207
 #
 # Usage:
 #   python3 generate_bottom_roughness_regrid.py \
@@ -31,6 +32,7 @@
 #   - xesmf
 #   - xarray
 #   - numpy
+#   - scipy
 #
 # Modules:
 #   module use /g/data/xp65/public/modules
