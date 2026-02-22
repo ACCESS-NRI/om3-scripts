@@ -52,6 +52,56 @@
 #       --omega 1.405189e-4 # M2 \
 #       --woa_intermediate_file woa_intermediates.nc
 #
+# This script takes around 52 minutes to run with 72 cpus on a Sapphire Rapids node.
+# It does not fully utilise the node due to MPI overhead and memory pressure.
+# Since this script only need to run once per woa version,
+# we prioritise code clarity and maintainability over performance optimisations.
+#
+# Below is an example of a pbs job
+# #!/bin/bash
+# #PBS -P tm70
+# #PBS -l storage=gdata/ik11+gdata/tm70+gdata/vk83+gdata/xp65
+# #PBS -N bottom_roughness_generation
+# #PBS -q normalsr
+# #PBS -l walltime=2:00:00
+# #PBS -l mem=500GB
+# #PBS -l ncpus=72
+#
+# set -euo pipefail
+#
+# module purge
+# module use /g/data/xp65/public/modules
+# module load conda/analysis3-25.08
+# module load openmpi/4.1.7
+# module load git
+# cd "$PBS_O_WORKDIR" || exit 1
+#
+# if [[ -s $WOA23_OUTPUT_PATH ]]; then
+#   echo "Found existing intermediate file: ${WOA23_OUTPUT_PATH}"
+#   echo "Hence skipping MPI intermediate generation."
+# else
+#   echo "Generating intermediate WOA-based bottom roughness file: ${WOA23_OUTPUT_PATH}"
+#   mpirun -n $PBS_NCPUS python3 $INTERMEDIATE_SCRIPT \
+#     --woa_temp_file ${WOA23_TEMP_PATH} \
+#     --woa_salt_file ${WOA23_SALT_PATH} \
+#     --synbath_file ${SYNBATH_PATH} \
+#     --woa_intermediate_file ${WOA23_OUTPUT_PATH} \
+#     > log_woa.log 2>&1
+# fi
+#
+# echo "Regridding bottom roughness to MOM6 grid: ${OUTPUT_PATH}"
+# python3 $REGRID_SCRIPT \
+#   --woa_intermediate_file ${WOA23_OUTPUT_PATH} \
+#   --topog_file ${TOPOG_PATH} \
+#   --hgrid_file ${HGRID_PATH} \
+#   --output_file ${OUTPUT_PATH} \
+#   --method conservative_normed \
+#   --periodic_regrid \
+#   --periodic_lon_laplace \
+#   > log_regrid.log 2>&1
+#
+# echo "Bottom roughness generation completed!"
+#
 # Notes:
 # - The implementation follows the matlab reference workflow provided by Callum Shakespeare
 #   and was adapted for parallel execution and regridding to MOM6.
