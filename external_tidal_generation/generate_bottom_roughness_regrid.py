@@ -51,8 +51,6 @@ import xesmf as xe
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
-# from generate_bottom_roughness_intermediate_woa import fill_missing_data_laplace
-
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 from scripts_common import get_provenance_metadata, md5sum
