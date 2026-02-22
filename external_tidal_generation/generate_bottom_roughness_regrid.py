@@ -48,6 +48,7 @@ import xesmf as xe
 
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
+
 # from generate_bottom_roughness_intermediate_woa import fill_missing_data_laplace
 
 path_root = Path(__file__).parents[1]
@@ -257,10 +258,12 @@ def regrid_depth_var_to_mom6(
     regridder = xe.Regridder(source_ds, target_ds, **regridder_kwargs)
 
     # compute which woa cells are needed
-    needed_woa_source_cells = compute_needed_woa_source_cells(regridder, mom6_mask, depth_var.shape)
+    needed_woa_source_cells = compute_needed_woa_source_cells(
+        regridder, mom6_mask, depth_var.shape
+    )
 
     # Allow filling in woa or needed cells
-    woa_ocean = (lambda1.values > 0)
+    woa_ocean = lambda1.values > 0
     fill_mask = woa_ocean | needed_woa_source_cells
     depth_var_filled_np = fill_missing_data_laplace(
         depth_var.values,
