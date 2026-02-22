@@ -83,10 +83,6 @@ import xarray as xr
 import gsw
 from dataclasses import dataclass
 
-from scipy import ndimage
-import scipy.sparse as sp
-import scipy.sparse.linalg as spla
-
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 from scripts_common import get_provenance_metadata, md5sum
@@ -382,99 +378,6 @@ def gatherv_indexed(
     out1d = np.full(total_size, np.nan, dtype=local_val.dtype)
     out1d[all_idx] = all_val
     return out1d
-
-
-def fill_missing_data_laplace(
-    field: np.ndarray, mask: np.ndarray, periodic_lon: bool = True
-) -> np.ndarray:
-    """
-    Fill nans smoothly by solving a discrete Laplace problem over the wet domain.
-
-    This is adapted from:
-    https://github.com/ACCESS-NRI/om3-scripts/blob/53c807d/chlorophyll/chl_climatology_and_fill.py,
-
-    which itself was originally derived from:
-    https://github.com/adcroft/interp_and_fill/blob/6d8fc06/Interpolate%20and%20fill%20SeaWIFS.ipynb
-
-    This implementation otherwise assumes a regular lat/lon grid (WOA),
-    hence tripolar topology is intentionally not handled here.
-
-    Periodic boundary conditions are supported in longitude only (global configuration).
-    For regional configurations, set periodic_lon=False is not implemented yet.
-    """
-    nj, ni = field.shape
-    # Find the missing points to fill (nan in field but mask > 0)
-    missing_mask = np.isnan(field) & (mask > 0)
-    if not np.any(missing_mask):
-        # no missing data to fill but also guarantee nans on dry cells
-        return np.where(mask > 0, field, np.nan)
-
-    # change nan to 0 for the sparse matrix construction
-    work = np.where(np.isnan(field), 0.0, field)
-    missing_j, missing_i = np.where(missing_mask)
-    n_missing = missing_j.size
-    ind = np.full((nj, ni), -1, dtype=np.int64)
-    ind[missing_j, missing_i] = np.arange(n_missing)
-
-    # Sparse matrix
-    A = sp.lil_matrix((n_missing, n_missing))
-    b = np.zeros(n_missing)
-    ld = np.zeros(n_missing)
-
-    def _process_neighbour(n: int, jn: int, in_: int) -> None:
-        """Process neighbour at (jn, in_) for row n."""
-        if mask[jn, in_] <= 0:
-            return
-
-        ld[n] -= 1
-        idx = ind[jn, in_]
-
-        if idx >= 0:
-            A[n, idx] = 1
-        else:
-            b[n] -= work[jn, in_]
-
-    for n in range(n_missing):
-        j = missing_j[n]
-        i = missing_i[n]
-
-        if periodic_lon:
-            im1 = (i - 1) % ni  # west
-            ip1 = (i + 1) % ni  # east
-            _process_neighbour(n, j, im1)
-            _process_neighbour(n, j, ip1)
-        else:
-            # TODO handle non-periodic case if needed
-            raise NotImplementedError(
-                "Non-periodic longitude is not implemented yet. "
-                "Set periodic_lon=True for global grids."
-            )
-
-        if j > 0:
-            _process_neighbour(n, j - 1, i)  # south
-        if j < nj - 1:
-            _process_neighbour(n, j + 1, i)  # north
-
-    stabilizer = 1e-14  # prevent singular matrix
-    A[np.arange(n_missing), np.arange(n_missing)] = ld - stabilizer
-    x = spla.spsolve(A.tocsr(), b)
-    work[missing_j, missing_i] = x
-    work = np.where(mask > 0, work, np.nan)
-    return work
-
-
-def laplace_smooth(
-    field: np.ndarray, mask: np.ndarray, erosion_iters: int = 2
-) -> np.ndarray:
-    """
-    Smooth field over wet cells only by applying a Laplace smoother.
-    Fill missing values over the original wet mask using a Laplacian solver.
-    This ensures coastal nans gets filled and the field is continuous across the entire ocean domain.
-    """
-    wet = mask > 0
-    field_filled = fill_missing_data_laplace(field, mask=wet, periodic_lon=True)
-
-    return np.where(wet, field_filled, np.nan)
 
 
 def compute_mean_depth_and_var_points(
@@ -842,14 +745,6 @@ def main():
     )
 
     if rank == 0:
-        # Smooth-fill nans in depth_var on the WOA grid
-        mask = lambda1_np > 0
-        mean_depth_filled = laplace_smooth(mean_depth, mask, erosion_iters=2)
-        mean_depth = mean_depth_filled
-
-        depth_var_filled = laplace_smooth(depth_var, mask, erosion_iters=2)
-        depth_var = depth_var_filled
-
         ds_woa_output = xr.Dataset(
             {
                 "lambda1": xr.DataArray(
