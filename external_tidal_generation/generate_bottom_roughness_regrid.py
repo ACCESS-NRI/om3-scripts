@@ -72,9 +72,8 @@ def fill_missing_data_laplace(
     This implementation otherwise assumes a regular lat/lon grid (WOA),
     hence tripolar topology is intentionally not handled here.
 
-    Periodic boundary conditions are supported in longitude only (global configuration).
-
-    For regional configurations, set periodic_lon_laplace=False is not implemented yet.
+    Both periodic and non-periodic longitude boundary conditions are supported
+    and controlled by the periodic_lon_laplace flag.
     """
     nj, ni = field.shape
     # Find the missing points to fill (nan in field but mask > 0)
@@ -118,11 +117,11 @@ def fill_missing_data_laplace(
             _process_neighbour(n, j, im1)
             _process_neighbour(n, j, ip1)
         else:
-            # TODO handle non-periodic case if needed
-            raise NotImplementedError(
-                "Non-periodic longitude is not implemented yet. "
-                "Set periodic_lon_laplace=True for global grids."
-            )
+            # no wrap in longitude, so only consider valid neighbours within bounds
+            if i > 0:
+                _process_neighbour(n, j, i - 1)  # west
+            if i < ni - 1:
+                _process_neighbour(n, j, i + 1)  # east
 
         if j > 0:
             _process_neighbour(n, j - 1, i)  # south
