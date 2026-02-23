@@ -735,13 +735,17 @@ def main():
             dims=("depth_mid",),
             coords={"depth_mid": depth_mid_values},
             name="depth_mid",
+            attrs={
+                "units": "m",
+                "long_name": "Depth midway between WOA depths (positive down)",
+            },
         )
 
         N2_da = xr.DataArray(
             N2,
             dims=("depth_mid", "lat", "lon"),
             coords={
-                "depth_mid": depth_mid_values,
+                "depth_mid": depth_mid,
                 "lat": lat,
                 "lon": lon,
             },
