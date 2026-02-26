@@ -1,0 +1,145 @@
+#!/bin/bash
+#PBS -P tm70
+#PBS -l storage=gdata/ik11+gdata/tm70+gdata/vk83+gdata/xp65
+#PBS -N bottom_roughness_generation
+#PBS -q normalsr
+#PBS -l walltime=10:00:00
+#PBS -l mem=500GB
+#PBS -l ncpus=72
+##PBS -j oe
+
+
+#   - It takes around 52 minutes to run the intermediate generation step on 72 CPUs for global configurations, and around 1 minutes for the regridding step on a single cpu.
+#   - Regridding method is handled automatically based on resolution, where only the 100km configs use `conservative_normed` method, and the rest use `bilinear` method. (see https://github.com/ACCESS-NRI/om3-scripts/pull/105#issuecomment-3942010809).
+#   - The intermediate generation step is parallelised with MPI, but the regridding step is not, as it is very fast and the overhead of parallelisation would likely outweigh the benefits.
+#   - The script checks for the existence of the intermediate file before running the intermediate generation step, to avoid unnecessary re-computation if the script is re-run with the same settings.
+#   - The script also includes logging of both steps to separate log files for easier debugging and record keeping.
+#   - The script is designed to be flexible for both global (periodic) and regional (non-periodic) configurations, with the periodicity settings controlled by the `PERIODIC_REGRID` and `PERIODIC_LON_LAPLACE` environment variables passed from the submission script.
+
+set -euo pipefail
+
+module purge
+module use /g/data/xp65/public/modules
+module load conda/analysis3
+module load openmpi/4.1.7
+module load git
+
+cd "$PBS_O_WORKDIR" || exit 1
+
+# ------ Inputs from qsub -v ------
+# Path to save intermediate and final outputs
+: "${PATH_TO_SAVE:?Missing PATH_TO_SAVE}"
+
+# periodic (global) vs non-periodic (regional)
+# If both are true -> scope=global; both false -> scope=regional
+: "${PERIODIC_REGRID:?Missing PERIODIC_REGRID}"
+: "${PERIODIC_LON_LAPLACE:?Missing PERIODIC_LON_LAPLACE}"
+
+# Resolution
+: "${RESOLUTION:?Missing RESOLUTION}"
+
+case "$RESOLUTION" in
+  "100km"|"25km"|"8km"|"panan_4km")
+    ;;
+  *)
+    echo "Error: Unsupported RESOLUTION: ${RESOLUTION}"
+    echo "Supported values: 100km, 25km, 8km, panan_4km"
+    exit 1
+    ;;
+esac
+
+# Paths to grid files for regridding step
+: "${TOPOG_PATH:?Missing TOPOG_PATH}"
+: "${HGRID_PATH:?Missing HGRID_PATH}"
+# ------ Inputs from qsub -v ------
+
+
+if [[ "$PERIODIC_REGRID" == true && "$PERIODIC_LON_LAPLACE" == true ]]; then
+  SCOPE="global"
+elif [[ "$PERIODIC_REGRID" == false && "$PERIODIC_LON_LAPLACE" == false ]]; then
+  SCOPE="regional"
+else
+  echo "Error: Inconsistent periodicity settings. Both PERIODIC_REGRID and PERIODIC_LON_LAPLACE should be the same (either true or false)."
+  exit 1
+fi
+
+
+# Intermediate file - shared across resolutions/scopes
+WOA23_OUTPUT_PATH="${PATH_TO_SAVE}/bottom_roughness_intermediate.nc"
+
+# Final output file - varies by resolution/scope
+OUTPUT_PATH="${PATH_TO_SAVE}/bottom_roughness.nc"
+LOG_INTERMEDIATE="${PATH_TO_SAVE}/log_${SCOPE}_bottom_roughness_intermediate_${RESOLUTION}.log"
+LOG_REGRID="${PATH_TO_SAVE}/log_${SCOPE}_bottom_roughness_regrid_${RESOLUTION}.log"
+
+# script paths
+INTERMEDIATE_SCRIPT="/g/data/vk83/apps/om3-scripts/external_tidal_generation/generate_bottom_roughness_intermediate_woa.py"
+REGRID_SCRIPT="/g/data/vk83/apps/om3-scripts/external_tidal_generation/generate_bottom_roughness_regrid.py"
+
+INTERMEDIATE_SCRIPT="/g/data/tm70/ml0072/COMMON/git_repos/COSIMA_om3-scripts/external_tidal_generation/generate_bottom_roughness_intermediate_woa.py"
+REGRID_SCRIPT="/g/data/tm70/ml0072/COMMON/git_repos/COSIMA_om3-scripts/external_tidal_generation/generate_bottom_roughness_regrid.py"
+
+# Input paths - shared across resolutions/scopes
+# Loads woa23 0.25deg annual mean climatology
+WOA23_TEMP_PATH="/g/data/ik11/inputs/WOA23/woa23_decav_t00_04.nc"
+WOA23_SALT_PATH="/g/data/ik11/inputs/WOA23/woa23_decav_s00_04.nc"
+
+# Loads SYNBATH global bathymetry
+SYNBATH_PATH="/g/data/ik11/inputs/SYNBATH/SYNBATH.nc"
+
+# Regridding method selection
+# 100km -> conservative_normed, otherwise bilinear
+# https://github.com/ACCESS-NRI/om3-scripts/pull/105#issuecomment-3942010809
+METHOD="bilinear"
+if [[ "$RESOLUTION" == "100km" ]]; then
+  METHOD="conservative_normed"
+fi
+
+# Build optional flags for regrid script
+REGRID_FLAGS=()
+if [[ "$PERIODIC_REGRID" == true ]]; then
+  REGRID_FLAGS+=(--periodic_regrid)
+fi
+if [[ "$PERIODIC_LON_LAPLACE" == true ]]; then
+  REGRID_FLAGS+=(--periodic_lon_laplace)
+fi
+
+# ----------------------------
+# Run
+# ----------------------------
+
+echo "=== Bottom roughness generation ==="
+echo "Resolution           : ${RESOLUTION}"
+echo "Scope                : ${SCOPE}"
+echo "Regrid method        : ${METHOD}"
+echo "Periodic regrid      : ${PERIODIC_REGRID}"
+echo "Periodic lon (laplace): ${PERIODIC_LON_LAPLACE}"
+echo "Intermediate file    : ${WOA23_OUTPUT_PATH}"
+echo "Output file          : ${OUTPUT_PATH}"
+echo "Intermediate log     : ${LOG_INTERMEDIATE}"
+echo "Regrid log           : ${LOG_REGRID}"
+echo
+
+if [[ -s $WOA23_OUTPUT_PATH ]]; then
+  echo "Found existing intermediate file: ${WOA23_OUTPUT_PATH}"
+  echo "Hence skipping MPI intermediate generation."
+else
+  echo "Generating intermediate WOA-based bottom roughness file: ${WOA23_OUTPUT_PATH}"
+  mpirun -n $PBS_NCPUS python3 $INTERMEDIATE_SCRIPT \
+    --woa_temp_file ${WOA23_TEMP_PATH} \
+    --woa_salt_file ${WOA23_SALT_PATH} \
+    --synbath_file ${SYNBATH_PATH} \
+    --woa_intermediate_file ${WOA23_OUTPUT_PATH} \
+    > ${LOG_INTERMEDIATE} 2>&1
+fi
+
+echo "Regridding bottom roughness to MOM6 grid: ${OUTPUT_PATH}"
+python3 $REGRID_SCRIPT \
+  --woa_intermediate_file ${WOA23_OUTPUT_PATH} \
+  --topog_file ${TOPOG_PATH} \
+  --hgrid_file ${HGRID_PATH} \
+  --output_file ${OUTPUT_PATH} \
+  --method ${METHOD} \
+  "${REGRID_FLAGS[@]}" \
+  > ${LOG_REGRID} 2>&1
+echo "Bottom roughness generation completed!"
