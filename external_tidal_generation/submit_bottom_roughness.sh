@@ -13,7 +13,7 @@ Help() {
     echo
     echo "Required arguments:"
     echo "  -s   Path to save intermediate and final outputs"
-    echo "  -r   Resolution to generate (eg, '25km' or any user-defined name)"
+    echo "  -r   Resolution is one of: 100km, 25km, 8km, panan_4km."
     echo "  -p   Periodic mode: true (periodic longitude); false (aperiodic longitude) is not supported yet."
     echo "       (Sets BOTH PERIODIC_REGRID and PERIODIC_LON_LAPLACE as a bundle)"
     echo "  -g   Path to ocean_hgrid.nc"
@@ -23,6 +23,7 @@ Help() {
     echo "Examples:"
     echo "  # periodic longitude"
     echo "  ./submit_bottom_roughness.sh -s /path/to/save -r 25km -p true -g /path/to/hgrid.nc -t /path/to/topog.nc -j /path/to/pbs_bottom_roughness.pbs"
+    echo "  # aperiodic longitude (not supported yet)"
     echo
     exit 0
 }
