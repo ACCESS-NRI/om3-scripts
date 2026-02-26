@@ -418,8 +418,17 @@ def main():
     global_attrs["inputFile"] = ", ".join(file_hashes)
     regrid_depth_var.attrs.update(global_attrs)
 
-    regrid_depth_var.to_netcdf(args.output_file)
-    print(f"Output written to {args.output_file}")
+    output_path = Path(args.output_file)
+    tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+
+    # ensure tmp does not exist
+    if tmp_path.exists():
+        tmp_path.unlink()
+
+    regrid_depth_var.to_netcdf(tmp_path)
+    tmp_path.replace(output_path)
+
+    print(f"Output written to {output_path}")
 
 
 if __name__ == "__main__":
