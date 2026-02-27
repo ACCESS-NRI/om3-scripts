@@ -72,7 +72,7 @@ for stream_name, var_prefix, var_suffix in stream_info_data:
     SubElement(stream_info, "tintalgo").text = "linear"
     SubElement(stream_info, "offset").text = "0"
     SubElement(stream_info, "readmode").text = "single"
-    SubElement(stream_info, "mapalgo").text = "bilinear"
+    SubElement(stream_info, "mapalgo").text = "consd"
     SubElement(stream_info, "year_first").text = str(year_first)
     SubElement(stream_info, "year_last").text = str(year_last)
     SubElement(stream_info, "year_align").text = str(year_align)
