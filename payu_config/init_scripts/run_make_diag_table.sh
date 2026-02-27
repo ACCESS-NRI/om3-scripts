@@ -42,7 +42,7 @@ else
     cd $BASE
     echo "-- Cloned make_diag_table repo to $DEST"
 
-    if [ $MODEL = "access-om2" ]; then
+    if [[ $MODEL == "access-om2" || $MODEL == "access-om3" ]]; then
     python3 make_diag_table.py
     else
     cp -f diag_table_standard_source.yaml diag_table_source.yaml
