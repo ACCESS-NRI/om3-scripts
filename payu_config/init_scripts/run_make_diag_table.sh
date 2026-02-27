@@ -14,7 +14,7 @@ echo "-- Detected model: $MODEL"
 
 case $MODEL in
     access-om3)
-        DEST="diagnostic_profiles/source_yaml_files/make_diag_table"
+        DEST="make_diag_table"
         ;;
     access-om2)
         DEST="tools/make_diag_table"
