@@ -6,12 +6,12 @@
 # an input dataset and ensuring all target cells are ocean cells
 #
 # To run:
-#   python generate_rofi_pattern.py --mesh_filename=<input_file> --weights_filename=<output_file>
+#   python generate_rofi_pattern.py --hgrid-filename=<path-to-supergrid-file>
+# --output-filename=<path-to-output-file> --topog-file=<path-to-bathymetry-file>
 #
-# This script currently supports mesh files in the ESMF unstructed mesh format.
+# This script currently supports using the hgrid file and topog file in MOM6 formats
+# for the ocean grid and mask
 #
-# There is not enough memory on the gadi login node to run this, its simplest to run in
-# a terminal through are.nci.org.au
 #
 # The run command and full github url of the current version of this script is added to the
 # metadata of the generated weights file. This is to uniquely identify the script and inputs used
@@ -23,7 +23,7 @@
 #   Anton Steketee <anton.steketee@anu.edu.au>
 #
 # Dependencies:
-#   esmpy, xarray and scipy
+#   xesmf, xarray and sklearn
 # =========================================================================================
 
 
@@ -46,66 +46,80 @@ from mesh_generation.generate_mesh import mom6_mask_detection
 
 # in a climatology, with 365 day calendar, whats the day of the middle of each month
 DAY_IN_MONTH = [15.5, 45, 74.5, 105, 135.5, 166, 196.5, 227.5, 258, 288.5, 319, 349.5]
+AQ_MELT_PATTERN = "/g/data/av17/access-nri/OM3/Mankoff_2025_V9/AQ_iceberg_melt.nc"
+GL_MELT_PATTERN = "/g/data/av17/access-nri/OM3/Mankoff_2025_V9/GL_iceberg_melt.nc"
+
+# attributes to copy from source data
+ATTRS = [
+    "title",
+    "history",
+    "original_data_source",
+]
 
 
 def main():
 
-    regrid = Regrid_Common()
+    regrid_aq = Regrid_Common()
 
-    # regrid.parser.description = (
-    #     regrid.parser.description +
-    #     " For use in the MOM data_table."
-    # )
+    regrid_aq.parser.description = (
+        "Interpolate Mankoff 2025 climatology of iceberg spreading to to a grid "
+        "specified by a provided MOM supergrid file and landmask from a MOM topog "
+        " file. For use in CMEPS."
+    )
 
-    regrid.parser.add_argument(
+    regrid_aq.parser.add_argument(
         "--topog-file",
         type=str,
         required=True,
         help="Path to the model topography file, which is used to generate the model mask.",
     )
 
-    regrid.parse_cli()
+    regrid_aq.parse_cli()
 
-    regrid.open_datasets()
+    #  We need one regrid instance for each hemisphere:
+    regrid_gl = copy(regrid_aq)
+    regrid_aq.forcing_filename = AQ_MELT_PATTERN
+    regrid_gl.forcing_filename = GL_MELT_PATTERN
 
-    # stash some metadata for later
-    global_attrs = {
-        k: regrid.forcing_src.attrs[k]
-        for k in [
-            "description",
-            "original_data",
-            "title",
-            "history",
-            "original_data_source",
-        ]
-        if k in regrid.forcing_src.attrs
-    }
+    # stash some metadata for later and then regrid each hemsiphere
+    global_attrs = {}
+    for regrid in [regrid_aq, regrid_gl]:
+        regrid.open_datasets()
+        for k in ATTRS:
+            val = regrid.forcing_src.attrs.get(k)
+            if val is not None:
+                if k in global_attrs:
+                    global_attrs[k] += f"\n{val}"
+                else:
+                    global_attrs[k] = val
 
-    global_attrs["Makoff_doi"] = regrid.forcing_src.attrs["DOI"]
+        global_attrs["Mankoff_doi"] = regrid.forcing_src.attrs["DOI"]
 
-    # combine forcing for all regions
-    regrid.forcing_src = (
-        regrid.forcing_src.drop_vars(["region_map", "region_map_expanded"])
-        .sum("region")
-        .melt
-    )
+        # combine forcing for all regions
+        regrid.forcing_src = (
+            regrid.forcing_src.drop_vars(["region_map", "region_map_expanded"])
+            .sum("region")
+            .melt
+        )
 
-    regrid.regrid_forcing()
+        regrid.regrid_forcing()
 
-    # load topog.nc
+    # combine two regridding results
+    regrid = regrid_aq
+    forcing_regrid_glob = regrid_aq.forcing_regrid + regrid_gl.forcing_regrid
+
+    # After doing the regridding, map any runoff on land cells into the ocean
+    # find the ocean mask using the bathymetry
     topo = xr.open_dataset(regrid.args.topog_file)
     mask = mom6_mask_detection(topo)
-
     grid_dest = regrid.grid_dest
-
     grid_dest["mask"] = xr.DataArray(mask, dims=["ny", "nx"])
 
     nx = len(grid_dest.nx)
     ny = len(grid_dest.ny)
 
     # convert destination grid into 1d (lat, lon)
-    # source cells are all grid cells
-    # target cells are ocean cells only
+    # source cells are all grid cells, target cells are ocean cells only
     grid_dest["i"] = xr.DataArray(
         np.arange(0, ny * nx).reshape(ny, nx), dims=["ny", "nx"]
     )
@@ -124,18 +138,16 @@ def main():
     # create a BallTree (nearest neighbour) and query for all source cells
     mask_tree = BallTree(target_cells_rad, metric="haversine")
     ii = mask_tree.query(source_cells_rad, return_distance=False)
-    # result is index in target_cells, convert to grid index
+    # ii is index in target_cells, convert to grid index
     new_index = mask_stacked.i.values[ii[:, 0]].astype(np.int64)
 
-    # use esmf grid areas for consistency with CMEPS
+    # adjustment for fraction of old_area/new_area, use esmf grid areas for consistency with CMEPS
     area = cell_area(grid_dest)
-
-    # adjustment for area of old area vs new area
     area_1d = area.values.flatten()
     area_frac = area_1d / area_1d[new_index]
 
     # convert regrid result into 1d, move to nearest neighbour where needed
-    weights = np.reshape(regrid.forcing_regrid.values, (12, nx * ny))
+    weights = np.reshape(forcing_regrid_glob.values, (12, nx * ny))
     weights_adj = copy(weights)
     for i, new_i in enumerate(new_index):
         if i != new_i:
@@ -144,7 +156,7 @@ def main():
 
     # new output
     weights_da = xr.DataArray(
-        np.reshape(weights_adj, (12, 300, 360)), dims=["time", "rofi_ny", "rofi_nx"]
+        np.reshape(weights_adj, (12, ny, nx)), dims=["time", "rofi_ny", "rofi_nx"]
     )
 
     weights_ds = weights_da.to_dataset(name="pattern_Forr_rofi")
@@ -165,23 +177,37 @@ def main():
         f"{regrid.runcmd_args}"
     )
 
-    # add md5 hashes for input files
-    # file_hashes = [
-    #     f"{args.topog_file} (md5 hash: {md5sum(args.topog_file)})",
-    # ]
-    # global_attrs["inputFile"] = ", ".join(file_hashes)
-    # tideamp.attrs.update(global_attrs)
+    # Info about input data used
+    file_hashes = [
+        f"{AQ_MELT_PATTERN} (md5 hash: {md5sum(AQ_MELT_PATTERN)})",
+        f"{GL_MELT_PATTERN} (md5 hash: {md5sum(GL_MELT_PATTERN)})",
+        f"{regrid.hgrid_filename} (md5 hash: {md5sum(regrid.hgrid_filename)})",
+        f"{regrid.args.topog_file} (md5 hash: {md5sum(regrid.args.topog_file)})",
+    ]
+    if regrid.mask_filename:
+        file_hashes.append(
+            f"{regrid.mask_filename} (md5 hash: {md5sum(regrid.mask_filename)})"
+        )
 
     global_attrs |= {
         "description": "Mankoff 2025 iceberg spreading climatology remapped onto an ACCESS-OM3 grid",
         "history": get_provenance_metadata(this_file, runcmd),
+        "inputFile": ", ".join(file_hashes),
     }
 
     weights_ds.attrs = weights_ds.attrs | global_attrs
 
-    regrid.forcing_regrid = weights_ds
+    # Save output
+    var_encoding = dict(zlib=True, complevel=1, _FillValue=-1.0e10)
+    for var in weights_ds.data_vars:
+        weights_ds[var].encoding |= var_encoding
+    # Coordinates should not have _FillValue
+    coord_encoding = dict(_FillValue=None)
+    for coord in weights_ds.coords:
+        weights_ds[coord].encoding |= coord_encoding
 
-    regrid.save_output()
+    unlimited_dims = "time" if "time" in weights_ds.dims else None
+    weights_ds.to_netcdf(regrid.output_filename, unlimited_dims=unlimited_dims)
 
 
 if __name__ == "__main__":

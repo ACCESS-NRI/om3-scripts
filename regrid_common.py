@@ -1,3 +1,10 @@
+# Copyright 2026 ACCESS-NRI and contributors. See the top-level COPYRIGHT file for details.
+# SPDX-License-Identifier: Apache-2.0
+
+# =========================================================================================
+# These are common functions/classes which assist with regridding
+# =========================================================================================
+
 import os
 import xesmf as xe
 import xarray as xr
@@ -53,13 +60,6 @@ class Regrid_Common:
         parser = self.parser
 
         parser.add_argument(
-            "--forcing-filename",
-            type=str,
-            required=True,
-            help="The path to the forcing file to interpolate.",
-        )
-
-        parser.add_argument(
             "--hgrid-filename",
             type=str,
             required=True,
@@ -105,7 +105,6 @@ class Regrid_Common:
 
         args = parser.parse_args()
         self.args = args
-        self.forcing_filename = os.path.abspath(args.forcing_filename)
         self.hgrid_filename = os.path.abspath(args.hgrid_filename)
         self.output_filename = os.path.abspath(args.output_filename)
         self.mask_filename = args.mask_filename
@@ -117,10 +116,7 @@ class Regrid_Common:
 
         # some info about how the file was generated
 
-        runcmd_args = (
-            f"--forcing-filename={self.forcing_filename} "
-            f"--hgrid-filename={self.hgrid_filename} --output-filename={self.output_filename}"
-        )
+        runcmd_args = f"--hgrid-filename={self.hgrid_filename} --output-filename={self.output_filename}"
 
         if self.mask_filename:
             runcmd_args += f" --mask-filename={mask_filename}"
@@ -130,6 +126,8 @@ class Regrid_Common:
             runcmd_args += f" --lat-name={lat_name}"
 
         self.runcmd_args = runcmd_args
+
+    ## NOTE: it's implied that forcing_filename is set outside this class
 
     def open_datasets(self):
 

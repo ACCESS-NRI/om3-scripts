@@ -1,4 +1,4 @@
-# Copyright 2025 ACCESS-NRI and contributors. See the top-level COPYRIGHT file for details.
+# Copyright 2026 ACCESS-NRI and contributors. See the top-level COPYRIGHT file for details.
 # SPDX-License-Identifier: Apache-2.0
 
 # =========================================================================================
@@ -40,13 +40,23 @@ from scripts_common import get_provenance_metadata, md5sum
 
 def main():
 
+    # Init
     regrid = Regrid_Common()
+
+    regrid.parser.add_argument(
+        "--forcing-filename",
+        type=str,
+        required=True,
+        help="The path to the forcing file to interpolate.",
+    )
 
     regrid.parser.description = (
         regrid.parser.description + " For use in the MOM data_table."
     )
 
+    # Parse
     regrid.parse_cli()
+    regrid.forcing_filename = os.path.abspath(regrid.args.forcing_filename)
 
     regrid.open_datasets()
 
@@ -75,7 +85,7 @@ def main():
 
     runcmd = (
         f"python3 {os.path.basename(this_file)} --forcing-filename={regrid.forcing_filename} "
-        f"--hgrid-filename={regrid.hgrid_filename} --output-filename={regrid.output_filename}"
+        f"{regrid.runcmd_args}"
     )
 
     global_attrs = {
