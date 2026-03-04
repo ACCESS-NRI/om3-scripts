@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # =========================================================================================
-# Generate an spreading pattern to spread iceberge runoff fluxes, based on regridding
-# an input dataset and ensuring all target cells are ocean cells
+# Generate a spreading pattern to spread iceberge runoff fluxes, based on regridding
+# the Mankoff 2025 spreading climatology dataset and moving any results on land to the nearest ocean cell
 #
 # To run:
 #   python generate_rofi_pattern.py --hgrid-filename=<path-to-supergrid-file>
@@ -11,7 +11,6 @@
 #
 # This script currently supports using the hgrid file and topog file in MOM6 formats
 # for the ocean grid and mask
-#
 #
 # The run command and full github url of the current version of this script is added to the
 # metadata of the generated weights file. This is to uniquely identify the script and inputs used
@@ -46,6 +45,8 @@ from mesh_generation.generate_mesh import mom6_mask_detection
 
 # in a climatology, with 365 day calendar, whats the day of the middle of each month
 DAY_IN_MONTH = [15.5, 45, 74.5, 105, 135.5, 166, 196.5, 227.5, 258, 288.5, 319, 349.5]
+
+# source data to regrid
 AQ_MELT_PATTERN = "/g/data/av17/access-nri/OM3/Mankoff_2025_V9/AQ_iceberg_melt.nc"
 GL_MELT_PATTERN = "/g/data/av17/access-nri/OM3/Mankoff_2025_V9/GL_iceberg_melt.nc"
 
@@ -55,6 +56,61 @@ ATTRS = [
     "history",
     "original_data_source",
 ]
+
+
+def move_runoff_on_land(grid_mask, mask, forcing_regrid_glob):
+    """
+    For a provided grid, land mask, and DataArray, move any data which is on land
+    into ocean, usign a nearest neighbour algorithm
+    """
+
+    grid_dest["mask"] = xr.DataArray(mask, dims=["ny", "nx"])
+
+    nx = len(grid_dest.nx)
+    ny = len(grid_dest.ny)
+
+    # convert destination grid into 1d (lat, lon)
+    # source cells are all grid cells, target cells are ocean cells only
+    grid_dest["i"] = xr.DataArray(
+        np.arange(0, ny * nx).reshape(ny, nx), dims=["ny", "nx"]
+    )
+    grid_stacked = grid_dest[["lat", "lon", "i"]].stack(points=["ny", "nx"])
+    source_index = grid_stacked.i.values
+    source_cells = list(zip(grid_stacked["lat"].values, grid_stacked["lon"].values))
+    source_cells_rad = np.deg2rad(source_cells)
+
+    mask_stacked = grid_stacked.where(
+        grid_dest["mask"].stack(points=["ny", "nx"]), drop=True
+    )
+    target_cells = list(zip(mask_stacked["lat"].values, mask_stacked["lon"].values))
+    target_index = mask_stacked["i"].values
+    target_cells_rad = np.deg2rad(target_cells)
+
+    # create a BallTree (nearest neighbour) and query for all source cells
+    mask_tree = BallTree(target_cells_rad, metric="haversine")
+    ii = mask_tree.query(source_cells_rad, return_distance=False)
+    # ii is index in target_cells, convert to grid index
+    new_index = mask_stacked.i.values[ii[:, 0]].astype(np.int64)
+
+    # adjustment for fraction of old_area/new_area, use esmf grid areas for consistency with CMEPS
+    area = cell_area(grid_dest)
+    area_1d = area.values.flatten()
+    area_frac = area_1d / area_1d[new_index]
+
+    # convert regrid result into 1d, move to nearest neighbour where needed
+    weights = np.reshape(forcing_regrid_glob.values, (12, nx * ny))
+    weights_adj = copy(weights)
+    for i, new_i in enumerate(new_index):
+        if i != new_i:
+            weights_adj[:, i] = 0
+            weights_adj[:, new_i] += weights[:, i] * area_frac[i]
+
+    # new output
+    weights_da = xr.DataArray(
+        np.reshape(weights_adj, (12, ny, nx)), dims=["time", "rof_ny", "rof_nx"]
+    )
+
+    return weights_da
 
 
 def main():
@@ -108,61 +164,17 @@ def main():
     regrid = regrid_aq
     forcing_regrid_glob = regrid_aq.forcing_regrid + regrid_gl.forcing_regrid
 
-    # After doing the regridding, map any runoff on land cells into the ocean
     # find the ocean mask using the bathymetry
     topo = xr.open_dataset(regrid.args.topog_file)
     mask = mom6_mask_detection(topo)
-    grid_dest = regrid.grid_dest
-    grid_dest["mask"] = xr.DataArray(mask, dims=["ny", "nx"])
 
-    nx = len(grid_dest.nx)
-    ny = len(grid_dest.ny)
-
-    # convert destination grid into 1d (lat, lon)
-    # source cells are all grid cells, target cells are ocean cells only
-    grid_dest["i"] = xr.DataArray(
-        np.arange(0, ny * nx).reshape(ny, nx), dims=["ny", "nx"]
-    )
-    grid_stacked = grid_dest[["lat", "lon", "i"]].stack(points=["ny", "nx"])
-    source_index = grid_stacked.i.values
-    source_cells = list(zip(grid_stacked["lat"].values, grid_stacked["lon"].values))
-    source_cells_rad = np.deg2rad(source_cells)
-
-    mask_stacked = grid_stacked.where(
-        grid_dest["mask"].stack(points=["ny", "nx"]), drop=True
-    )
-    target_cells = list(zip(mask_stacked["lat"].values, mask_stacked["lon"].values))
-    target_index = mask_stacked["i"].values
-    target_cells_rad = np.deg2rad(target_cells)
-
-    # create a BallTree (nearest neighbour) and query for all source cells
-    mask_tree = BallTree(target_cells_rad, metric="haversine")
-    ii = mask_tree.query(source_cells_rad, return_distance=False)
-    # ii is index in target_cells, convert to grid index
-    new_index = mask_stacked.i.values[ii[:, 0]].astype(np.int64)
-
-    # adjustment for fraction of old_area/new_area, use esmf grid areas for consistency with CMEPS
-    area = cell_area(grid_dest)
-    area_1d = area.values.flatten()
-    area_frac = area_1d / area_1d[new_index]
-
-    # convert regrid result into 1d, move to nearest neighbour where needed
-    weights = np.reshape(forcing_regrid_glob.values, (12, nx * ny))
-    weights_adj = copy(weights)
-    for i, new_i in enumerate(new_index):
-        if i != new_i:
-            weights_adj[:, i] = 0
-            weights_adj[:, new_i] += weights[:, i] * area_frac[i]
-
-    # new output
-    weights_da = xr.DataArray(
-        np.reshape(weights_adj, (12, ny, nx)), dims=["time", "rofi_ny", "rofi_nx"]
-    )
+    # After doing the regridding, map any runoff on land cells into the ocean
+    weights_da = move_runoff_on_land(regrid.grid_dest, mask, forcing_regrid_glob)
 
     weights_ds = weights_da.to_dataset(name="pattern_Forr_rofi")
 
+    # Set calendar
     weights_ds["time"] = DAY_IN_MONTH
-
     weights_ds.time.attrs = {
         "standard_name": "time",
         "calendar": "proleptic_gregorian",
