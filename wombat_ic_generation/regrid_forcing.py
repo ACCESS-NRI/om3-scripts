@@ -59,10 +59,12 @@ def main():
 
     regrid.open_datasets()
 
-    forcing_regrid = regrid.regrid_forcing()
+    regrid.regrid_forcing()
+
+    forcing_regrid = regrid.forcing_regrid
 
     # Add metadata required by data_table
-    forcing_regrid = forcing_regrid.rename({"nyp": "ny", "nxp": "nx"})
+    # forcing_regrid = forcing_regrid.rename({"nyp": "ny", "nxp": "nx"})
     forcing_regrid = forcing_regrid.assign_coords(
         {
             "ny": ("ny", range(forcing_regrid.sizes["ny"])),
@@ -92,6 +94,8 @@ def main():
     }
 
     forcing_regrid.attrs = forcing_regrid.attrs | global_attrs
+
+    regrid.forcing_regrid = forcing_regrid
 
     regrid.save_output()
 
