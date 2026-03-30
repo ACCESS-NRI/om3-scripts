@@ -48,44 +48,11 @@ COMPRESSION = "zlib"
 source_data = "jra55v1p6"
 # source_data = "jra55v1p4"
 
-if source_data == "jra55v1p4":
-    # see https://raw.githubusercontent.com/COSIMA/1deg_jra55_iaf/2d6fdf53ae89124e7e11d40176813c286a8279bb/atmosphere/forcing.json
-    jradir = "/g/data/qv56/replicas/input4MIPs/CMIP6/OMIP/MRI/MRI-JRA55-do-1-4-0/"
-elif source_data == "jra55v1p6":
-    jradir = "/g/data/qv56/replicas/input4MIPs/CMIP6Plus/OMIP/MRI/MRI-JRA55-do-1-6-0/"
-else:
-    jradir = "/g/data/ua8/JRA55-do/v1-3/"
+# Assume JRA55do v1.6, RYF 9091
+jradir = "/g/data/qv56/replicas/input4MIPs/CMIP6Plus/OMIP/MRI/MRI-JRA55-do-1-6-0/"
+years = (1990,)
 
-if source_data == "jra55v1p4" or source_data == "jra55v1p6":
-    variables = [
-        "rsds",
-        "rlds",
-        "prra",
-        "prsn",
-        "psl",
-        "friver",
-        "tas",
-        "huss",
-        "uas",
-        "vas",
-        "licalvf",
-    ]
-    years = (1990,)
-else:
-    variables = [
-        "q_10",
-        "rain",
-        "rlds",
-        "rsds",
-        "slp",
-        "snow",
-        "t_10",
-        "u_10",
-        "v_10",
-        "runoff_all",
-    ]
-    years = (1984, 1990, 2003)
-
+base = Path(jradir)
 
 # loop over years
 for year1 in years:
@@ -107,56 +74,52 @@ for year1 in years:
         )
     else:
         baseyear = year2
-        timeslice1 = slice(datetime.datetime(year1, 5, 1, 0, 0), None)
-        timeslice2 = slice(datetime.datetime(year2, 5, 1, 0, 0), None)
+        timeslice1 = slice(
+            datetime.datetime(year1, 5, 1, 0, 0),
+            datetime.datetime(year1, 12, 31, 23, 59),
+        )
+        timeslice2 = slice(
+            datetime.datetime(year2, 5, 1, 0, 0),
+            datetime.datetime(year2, 12, 31, 23, 59),
+        )
+
+    files = {
+        "atm_ave": [
+            f for y in (year1, year2) for f in base.glob(f"atmos/3hr/*/gr/*/*{y}*.nc")
+        ],
+        "atm_pt": [
+            f for y in (year1, year2) for f in base.glob(f"atmos/3hrPt/*/gr/*/*{y}*.nc")
+        ],
+        "rof_ave": [
+            f for y in (year1, year2) for f in base.glob(f"land*/day/*/gr/*/*{y}*.nc")
+        ],
+    }
 
     ds = {}
 
-    for var in variables:
+    for group, filelist in files.items():
         ryf_files = str()
-        print(var)
-        for y in (year1, year2):
-            if source_data == "jra55v1p4" or source_data == "jra55v1p6":
-                # see https://raw.githubusercontent.com/COSIMA/1deg_jra55_iaf/2d6fdf53ae89124e7e11d40176813c286a8279bb/atmosphere/forcing.json
-                files = glob(
-                    os.path.join(
-                        jradir,
-                        "atmos/3hr/{v}/gr/v*/{v}*{yr}*.nc".format(v=var, yr=y),
-                    )
-                )
-                files += glob(
-                    os.path.join(
-                        jradir,
-                        "atmos/3hrPt/{v}/gr/v*/{v}*{yr}*.nc".format(v=var, yr=y),
-                    )
-                )
-                files += glob(
-                    os.path.join(
-                        jradir,
-                        "land/day/{v}/gr/v*/{v}*{yr}*.nc".format(v=var, yr=y),
-                    )
-                )
-                files += glob(
-                    os.path.join(
-                        jradir,
-                        "landIce/day/{v}/gr/v*/{v}*{yr}*.nc".format(v=var, yr=y),
-                    )
-                )
-            else:
-                files = glob(os.path.join(jradir, "{}.{}.*.nc".format(var, y)))
-            print("Loading {} for {}".format(files[0], y))
-            ds[y] = xarray.open_dataset(files[0], decode_coords=False)
-            # save info for metadata
-            ryf_files += f"{files[0]} (md5 hash: {md5sum(files[0])}, )"
-        # Make a copy of the second year without time_bnds
-        ryf = ds[baseyear].drop_vars("time_bnds")
-        ryf.encoding = ds[baseyear].encoding
+        print(group)
+
+        ds = xarray.open_mfdataset(
+            filelist,
+            data_vars="all",
+            compat="override",
+            coords="minimal",
+            decode_coords=False,
+        )
+        # save info for metadata
+        for file in filelist:
+            ryf_files += f"{file} (md5 hash: {md5sum(file)}, )"
+        # Make a copy of year2 without time_bnds
+        ryf = ds.sel(time=str(baseyear)).drop_vars("time_bnds")
+        ryf.encoding = ds.encoding
 
         for varname in ryf.data_vars:
             # Have to give all variables a FillValue attribute, otherwise xarray
             # makes it NaN which causes floating point errors
             # copy FillValue if it exists, otherwise use default
-            source_ds = ds[baseyear]
+            source_ds = ds
             ryf[varname].encoding["_FillValue"] = (
                 source_ds[varname].encoding.get("_FillValue") or FILLVALUE
             )
@@ -169,13 +132,20 @@ for year1 in years:
             if isleap(year2):
                 # Set the Jan->Apr values to those from the first year
                 ryf[varname].loc[dict(time=timeslice1)] = (
-                    ds[year2][varname].sel(time=timeslice2).values
+                    ds[varname].sel(time=timeslice2).values
                 )
             else:
                 # Set the May->Dec values to those from the first year
                 ryf[varname].loc[dict(time=timeslice2)] = (
-                    ds[year1][varname].sel(time=timeslice1).values
+                    ds[varname].sel(time=timeslice1).values
                 )
+
+            ryf[varname].encoding.update(
+                {
+                    "compression": COMPRESSION,
+                    "complevel": COMPLEVEL,
+                }
+            )
 
         for dim in ryf.dims:
             # Have to give all dimensions a useless FillValue attribute, otherwise xarray
@@ -197,20 +167,13 @@ for year1 in years:
             # 'calendar':'noleap'
         }
 
-        ryf[var].encoding.update(
-            {
-                "compression": COMPRESSION,
-                "complevel": COMPLEVEL,
-            }
-        )
-
         # Add some info about how the file was generated
         this_file = os.path.normpath(__file__)
         runcmd = f"python3 {os.path.basename(this_file)}"
         ryf.attrs |= {"RYF_creation": get_provenance_metadata(this_file, runcmd)}
         ryf.attrs |= {"RYF_inputFiles": ryf_files}
 
-        outfile = "RYF.{}.{}_{}.nc".format(var, year1, year2)
+        outfile = f"{group}_MRI-JRA55-do-1-6-0_RYF{year1}{year2}"
         print("Writing ", outfile)
         ryf.to_netcdf(outfile)
 
