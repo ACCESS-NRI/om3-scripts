@@ -29,7 +29,6 @@ from scripts_common import get_provenance_metadata
 
 # stream_name, era5_prefix, [(source_var, cime_var), ...], tintalgo
 STREAM_SPECS = [
-    ("ERA5.RAIN", "tp", [("tp", "Faxa_rain")], "linear"),
     ("ERA5.RAINC", "cp", [("cp", "Faxa_rainc")], "linear"),
     ("ERA5.RAINL", "lsp", [("lsp", "Faxa_rainl")], "linear"),
     ("ERA5.SNOWC", "csf", [("csf", "Faxa_snowc")], "linear"),
