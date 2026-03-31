@@ -24,6 +24,10 @@ sys.path.append(str(path_root))
 
 from scripts_common import get_provenance_metadata
 
+# ERA5 timing note: state fields (msl, t2m, d2m, u10, v10, aluvp, aluvd, alnip, alnid)
+# are instantaneous, while precipitation/radiative/heat-flux fields (cp, lsp, csf, lsf, strd,
+# ssrd, ssr, sshf, slhf) are hourly accumulation/flux fields.
+#
 # stream_name, era5_prefix, [(source_var, cime_var), ...], tintalgo
 STREAM_SPECS = [
     ("ERA5.RAINC", "cp", [("cp", "Faxa_rainc")], "linear"),
