@@ -15,14 +15,11 @@
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom import minidom
 import sys
-import os
-import subprocess
-import warnings
 from datetime import datetime
 from pathlib import Path
 import calendar
 
-path_root = Path(__file__).parent.parent
+path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
 from scripts_common import get_provenance_metadata
@@ -64,82 +61,8 @@ STREAM_SPECS = [
     ("ERA5.V_10", "10v", [("v10", "Sa_v"), ("v10", "Sa_v10m")], "linear"),
 ]
 
-DATE_GENERATED_ENV = "DATM_XML_DATE_GENERATED"
-HISTORY_ENV = "DATM_XML_HISTORY"
-
-
-def _strip_suffix(value, suffix):
-    if suffix and value.endswith(suffix):
-        return value[: -len(suffix)]
-    return value
-
-
-def _strip_prefix(value, prefix):
-    if prefix and value.startswith(prefix):
-        return value[len(prefix) :]
-    return value
-
-
-def _git_output(args):
-    return subprocess.check_output(args).decode("ascii").strip()
-
-
-def _compatible_provenance_metadata(file_path, runcmd):
-    dirname = os.path.dirname(file_path)
-    created_by = os.environ.get("USER", "unknown")
-
-    try:
-        git_name = _git_output(["git", "-C", dirname, "config", "user.name"])
-        created_by = f"{created_by} ({git_name})"
-    except subprocess.CalledProcessError:
-        pass
-
-    provenance = (
-        f"Created by {created_by} on {datetime.now().strftime('%Y-%m-%d')}, using "
-    )
-
-    try:
-        url = _git_output(
-            ["git", "-C", dirname, "config", "--get", "remote.origin.url"]
-        )
-        url = _strip_suffix(url, ".git")
-        if url.startswith("git@github.com:"):
-            url = f"https://github.com/{_strip_prefix(url, 'git@github.com:')}"
-
-        top_level_dir = _git_output(
-            ["git", "-C", dirname, "rev-parse", "--show-toplevel"]
-        )
-        rel_path = _strip_prefix(file_path, top_level_dir)
-        git_hash = _git_output(["git", "-C", dirname, "rev-parse", "HEAD"])
-        provenance += f"{url}/blob/{git_hash}{rel_path}: "
-    except subprocess.CalledProcessError:
-        warnings.warn(
-            f"{file_path} not under git version control! "
-            "Add your file to a repository before generating any production output."
-        )
-        provenance += f"{file_path}: "
-
-    return provenance + runcmd
-
-
-def get_metadata_history(file_path, runcmd):
-    metadata_override = os.environ.get(HISTORY_ENV)
-    if metadata_override:
-        return metadata_override
-
-    if hasattr(str, "removeprefix") and hasattr(str, "removesuffix"):
-        return get_provenance_metadata(file_path, runcmd)
-
-    return _compatible_provenance_metadata(file_path, runcmd)
-
-
-def get_date_generated():
-    return os.environ.get(DATE_GENERATED_ENV) or datetime.now().strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
-
 if len(sys.argv) != 3:
-    print("Usage: python generate_xml_datm_era.py year_first year_last")
+    print("Usage: python generate_xml_datm_era5.py year_first year_last")
     sys.exit(1)
 
 try:
@@ -158,19 +81,14 @@ root = Element("file", id="stream", version="2.0")
 # Obtain metadata
 this_file = sys.argv[0]
 runcmd = " ".join(sys.argv)
-try:
-    metadata_info = get_metadata_history(this_file, runcmd)
-except Exception as err:
-    print(
-        f"WARNING: failed to collect provenance metadata ({err}); using fallback history string.",
-        file=sys.stderr,
-    )
-    metadata_info = f"{Path(this_file).name} {runcmd}"
+metadata_info = get_provenance_metadata(this_file, runcmd)
 
 # Add metadata
 metadata = SubElement(root, "metadata")
 SubElement(metadata, "File_type").text = "DATM xml file provides forcing data"
-SubElement(metadata, "date_generated").text = get_date_generated()
+SubElement(metadata, "date_generated").text = datetime.now().strftime(
+    "%Y-%m-%d %H:%M:%S"
+)
 SubElement(metadata, "history").text = metadata_info
 
 # Generate stream info elements with changing years
