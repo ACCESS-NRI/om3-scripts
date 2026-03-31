@@ -212,7 +212,7 @@ for stream_name, era5_prefix, datavar_pairs, tintalgo in STREAM_SPECS:
             for month in range(1, 13):  # Loop through months (January to December)
                 days_in_month = calendar.monthrange(year, month)[1]  # Get the number of days in the month
                 file_element = SubElement(datafiles, "file")
-                file_element.text = f"/g/data/rt52/era5/single-levels/reanalysis/{era5_prefix}/{year}/{era5_prefix}_era5_oper_sfc_{year}{month:02d}01-{year}{month:02d}{days_in_month}.nc"
+                file_element.text = f"./INPUT/{era5_prefix}/{year}/{era5_prefix}_era5_oper_sfc_{year}{month:02d}01-{year}{month:02d}{days_in_month}.nc"
 # Convert the XML to a nicely formatted string
 xml_str = minidom.parseString(tostring(root)).toprettyxml(indent="  ")
 
