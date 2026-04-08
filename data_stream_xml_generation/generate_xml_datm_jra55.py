@@ -5,7 +5,7 @@
 # Generate a datm xml file that contains a time-series of input atmosphere data files where all the fields in the stream are located.
 
 # To run:
-#   python generate_xml_datm.py <year_first> <year_last>
+#   python generate_xml_datm_jra55.py <year_first> <year_last>
 # To generate IAF xml file, set year_first and year_last to the forcing period
 # To generate RYF xml file, set year_first==year_last
 
@@ -160,11 +160,11 @@ for stream_name in stream_info_names:
             # account for point or average datestamps in filename
             if stream_name in STREAMS_AVE:
                 file_element.text = (
-                    f"./INPUT/atmos/3hr/{file}{year}01010130-{year}{fin_md}2230.nc"
+                    f"./INPUT/3hr/{file}{year}01010130-{year}{fin_md}2230.nc"
                 )
             else:
                 file_element.text = (
-                    f"./INPUT/atmos/3hrPt/{file}{year}01010000-{year}{fin_md}2100.nc"
+                    f"./INPUT/3hrPt/{file}{year}01010000-{year}{fin_md}2100.nc"
                 )
 
 
