@@ -44,8 +44,6 @@ STREAM_SPECS = [
     ("ERA5.SWVDF", "aluvd", [("aluvd", "Faxa_swvdf")], "linear", 0),
     ("ERA5.SWNDR", "alnip", [("alnip", "Faxa_swndr")], "linear", 0),
     ("ERA5.SWNDF", "alnid", [("alnid", "Faxa_swndf")], "linear", 0),
-    ("ERA5.SEN", "sshf", [("sshf", "Faxa_sen")], "linear", -1800),
-    ("ERA5.LAT", "slhf", [("slhf", "Faxa_lat")], "linear", -1800),
     (
         "ERA5.SLP_10",
         "msl",
