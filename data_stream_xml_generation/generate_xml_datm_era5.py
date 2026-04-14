@@ -137,7 +137,9 @@ for stream_name, era5_prefix, datavar_pairs, tintalgo, offset_seconds in STREAM_
             )
         else:
             for month in range(1, 13):  # Loop through months (January to December)
-                days_in_month = calendar.monthrange(year, month)[1]  # Get the number of days in the month
+                days_in_month = calendar.monthrange(year, month)[
+                    1
+                ]  # Get the number of days in the month
                 file_element = SubElement(datafiles, "file")
                 file_element.text = f"./INPUT/{year}/{era5_prefix}_era5_oper_sfc_{year}{month:02d}01-{year}{month:02d}{days_in_month}.nc"
 # Convert the XML to a nicely formatted string
