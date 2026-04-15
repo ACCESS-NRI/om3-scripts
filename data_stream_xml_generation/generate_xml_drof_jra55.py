@@ -92,9 +92,9 @@ for stream_name, var_prefix, var_suffix in stream_info_data:
             file_element.text = f"./INPUT/RYF.{var_prefix}.{year+90}_{year + 90 + 1}.nc"
         else:
             if var_prefix == "friver":
-                f_prefix = f"./INPUT/land/day/"
+                f_prefix = f"./INPUT/day/"
             elif var_prefix == "licalvf":
-                f_prefix = f"./INPUT/landIce/day/"
+                f_prefix = f"./INPUT/day/"
 
             if source_data == "jra55v1p4":
                 f_prefix += f"{var_prefix}/gr/v20190429/{var_prefix}_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-4-0_gr_"
