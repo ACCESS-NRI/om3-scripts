@@ -58,7 +58,7 @@ ATTRS = [
 ]
 
 
-def move_runoff_on_land(grid_mask, mask, forcing_regrid_glob):
+def move_runoff_on_land(grid_dest, mask, forcing_regrid_glob):
     """
     For a provided grid, land mask, and DataArray, move any data which is on land
     into ocean, usign a nearest neighbour algorithm
@@ -172,8 +172,6 @@ def main():
     weights_da = move_runoff_on_land(regrid.grid_dest, mask, forcing_regrid_glob)
 
     weights_ds = weights_da.to_dataset(name="pattern_Forr_rofi")
-    weights_ds["lat"] = forcing_regrid_glob["lat"]
-    weights_ds["lon"] = forcing_regrid_glob["lon"]
 
     # Set calendar
     weights_ds["time"] = DAY_IN_MONTH
