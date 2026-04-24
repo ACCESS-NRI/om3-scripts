@@ -58,12 +58,13 @@ ATTRS = [
 ]
 
 
-def move_runoff_on_land(grid_dest, mask, forcing_regrid_glob):
+def move_runoff_on_land(grid_dest_in, mask, forcing_regrid_glob):
     """
     For a provided grid, land mask, and DataArray, move any data which is on land
     into ocean, usign a nearest neighbour algorithm
     """
 
+    grid_dest = grid_dest_in.copy()
     grid_dest["mask"] = xr.DataArray(mask, dims=["ny", "nx"])
 
     nx = len(grid_dest.nx)
@@ -75,7 +76,6 @@ def move_runoff_on_land(grid_dest, mask, forcing_regrid_glob):
         np.arange(0, ny * nx).reshape(ny, nx), dims=["ny", "nx"]
     )
     grid_stacked = grid_dest[["lat", "lon", "i"]].stack(points=["ny", "nx"])
-    source_index = grid_stacked.i.values
     source_cells = list(zip(grid_stacked["lat"].values, grid_stacked["lon"].values))
     source_cells_rad = np.deg2rad(source_cells)
 
@@ -83,7 +83,6 @@ def move_runoff_on_land(grid_dest, mask, forcing_regrid_glob):
         grid_dest["mask"].stack(points=["ny", "nx"]), drop=True
     )
     target_cells = list(zip(mask_stacked["lat"].values, mask_stacked["lon"].values))
-    target_index = mask_stacked["i"].values
     target_cells_rad = np.deg2rad(target_cells)
 
     # create a BallTree (nearest neighbour) and query for all source cells
@@ -152,12 +151,9 @@ def main():
         global_attrs["Mankoff_doi"] = regrid.forcing_src.attrs["DOI"]
 
         # combine forcing for all regions
-        regrid.forcing_src = (
-            regrid.forcing_src.drop_vars(["region_map", "region_map_expanded"])
-            .sum("region")
-            .melt
-        )
-
+        regrid.forcing_src = regrid.forcing_src.drop_vars(
+            ["region_map", "region_map_expanded"]
+        ).sum("region")[["melt"]]
         regrid.regrid_forcing()
 
     # combine two regridding results
@@ -169,7 +165,9 @@ def main():
     mask = mom6_mask_detection(topo)
 
     # After doing the regridding, map any runoff on land cells into the ocean
-    weights_da = move_runoff_on_land(regrid.grid_dest, mask, forcing_regrid_glob)
+    weights_da = move_runoff_on_land(
+        regrid.grid_dest, mask, forcing_regrid_glob["melt"]
+    )
 
     weights_ds = weights_da.to_dataset(name="pattern_Forr_rofi")
 
