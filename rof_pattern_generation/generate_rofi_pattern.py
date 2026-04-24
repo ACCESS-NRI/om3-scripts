@@ -208,7 +208,7 @@ def main():
     weights_ds.attrs = weights_ds.attrs | global_attrs
 
     # Save output
-    var_encoding = dict(zlib=True, complevel=1, _FillValue=-1.0e10)
+    var_encoding = dict(zlib=True, complevel=1, _FillValue=-1.0e36)
     for var in weights_ds.data_vars:
         weights_ds[var].encoding |= var_encoding
     # Coordinates should not have _FillValue
