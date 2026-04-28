@@ -48,7 +48,7 @@ def get_git_url(file):
         .strip()
     )
 
-    return f"{url}/blob/{hash}{rel_path}"
+    return f"{url}/blob/{hash}/{rel_path}"
 
 
 def git_status(file):

@@ -31,42 +31,42 @@ from scripts_common import get_provenance_metadata
 # For linear time interpolation, hourly interval fields are therefore shifted by -1800 s so the
 # timestamp is at the midpoint of the represented hour. Instantaneous fields keep offset=0.
 #
-# stream_name, era5_prefix, [(source_var, cime_var), ...], tintalgo, offset_seconds
+# stream_name, era5_prefix, [(source_var, cime_var), ...], mapalgo, offset_seconds
 STREAM_SPECS = [
-    ("ERA5.RAINC", "cp", [("cp", "Faxa_rainc")], "linear", -1800),
-    ("ERA5.RAINL", "lsp", [("lsp", "Faxa_rainl")], "linear", -1800),
-    ("ERA5.SNOWC", "csf", [("csf", "Faxa_snowc")], "linear", -1800),
-    ("ERA5.SNOWL", "lsf", [("lsf", "Faxa_snowl")], "linear", -1800),
-    ("ERA5.LWDN", "strd", [("strd", "Faxa_lwdn")], "linear", -1800),
-    ("ERA5.SWDN", "ssrd", [("ssrd", "Faxa_swdn")], "linear", -1800),
-    ("ERA5.SWNET", "ssr", [("ssr", "Faxa_swnet")], "linear", -1800),
-    ("ERA5.SWVDR", "aluvp", [("aluvp", "Faxa_swvdr")], "linear", 0),
-    ("ERA5.SWVDF", "aluvd", [("aluvd", "Faxa_swvdf")], "linear", 0),
-    ("ERA5.SWNDR", "alnip", [("alnip", "Faxa_swndr")], "linear", 0),
-    ("ERA5.SWNDF", "alnid", [("alnid", "Faxa_swndf")], "linear", 0),
+    ("ERA5.RAINC", "cp", [("cp", "Faxa_rainc")], "consf", -1800),
+    ("ERA5.RAINL", "lsp", [("lsp", "Faxa_rainl")], "consf", -1800),
+    ("ERA5.SNOWC", "csf", [("csf", "Faxa_snowc")], "consf", -1800),
+    ("ERA5.SNOWL", "lsf", [("lsf", "Faxa_snowl")], "consf", -1800),
+    ("ERA5.LWDN", "strd", [("strd", "Faxa_lwdn")], "consf", -1800),
+    ("ERA5.SWDN", "ssrd", [("ssrd", "Faxa_swdn")], "consf", -1800),
+    ("ERA5.SWNET", "ssr", [("ssr", "Faxa_swnet")], "consf", -1800),
+    ("ERA5.SWVDR", "aluvp", [("aluvp", "Faxa_swvdr")], "patch", 0),
+    ("ERA5.SWVDF", "aluvd", [("aluvd", "Faxa_swvdf")], "patch", 0),
+    ("ERA5.SWNDR", "alnip", [("alnip", "Faxa_swndr")], "patch", 0),
+    ("ERA5.SWNDF", "alnid", [("alnid", "Faxa_swndf")], "patch", 0),
     (
         "ERA5.SLP_10",
         "msl",
         [("msl", "Sa_pslv"), ("msl", "Sa_pbot")],
-        "linear",
+        "patch",
         0,
     ),
     (
         "ERA5.T_10",
         "2t",
         [("t2m", "Sa_t2m"), ("t2m", "Sa_tbot")],
-        "linear",
+        "patch",
         0,
     ),
     (
         "ERA5.TDEW",
         "2d",
         [("d2m", "Sa_tdew")],
-        "linear",
+        "patch",
         0,
     ),
-    ("ERA5.U_10", "10u", [("u10", "Sa_u"), ("u10", "Sa_u10m")], "linear", 0),
-    ("ERA5.V_10", "10v", [("v10", "Sa_v"), ("v10", "Sa_v10m")], "linear", 0),
+    ("ERA5.U_10", "10u", [("u10", "Sa_u"), ("u10", "Sa_u10m")], "patch", 0),
+    ("ERA5.V_10", "10v", [("v10", "Sa_v"), ("v10", "Sa_v10m")], "patch", 0),
 ]
 
 if len(sys.argv) != 3:
@@ -100,14 +100,14 @@ SubElement(metadata, "date_generated").text = datetime.now().strftime(
 SubElement(metadata, "history").text = metadata_info
 
 # Generate stream info elements with changing years
-for stream_name, era5_prefix, datavar_pairs, tintalgo, offset_seconds in STREAM_SPECS:
+for stream_name, era5_prefix, datavar_pairs, mapalgo, offset_seconds in STREAM_SPECS:
     stream_info = SubElement(root, "stream_info", name=stream_name)
     if year_first == year_last:
         SubElement(stream_info, "taxmode").text = "cycle"
     else:
         SubElement(stream_info, "taxmode").text = "extend"
     SubElement(stream_info, "readmode").text = "single"
-    SubElement(stream_info, "mapalgo").text = "bilinear"
+    SubElement(stream_info, "mapalgo").text = mapalgo
     SubElement(stream_info, "dtlimit").text = "1.e30"
     SubElement(stream_info, "year_first").text = str(year_first)
     SubElement(stream_info, "year_last").text = str(year_last)
@@ -124,7 +124,7 @@ for stream_name, era5_prefix, datavar_pairs, tintalgo, offset_seconds in STREAM_
         var_element.text = f"{src_var}  {cime_var}"
 
     SubElement(stream_info, "offset").text = str(offset_seconds)
-    SubElement(stream_info, "tintalgo").text = tintalgo
+    SubElement(stream_info, "tintalgo").text = "linear"
 
     # Use the first source variable for RYF file naming.
     driver_src_var = datavar_pairs[0][0]
