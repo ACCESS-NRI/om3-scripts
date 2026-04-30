@@ -9,7 +9,8 @@
 #   python regrid_forcing.py --forcing-filename=<path-to-forcing-file>
 #     --hgrid-filename=<path-to-supergrid-file> --output-filename=<path-to-output-file>
 # these extra arguments are available if required:
-#     --mask-filename=<path-to-mask-file>--lon-name=<lon-name> --lat-name=<lat-name>
+#     --mask-filename=<path-to-mask-file> --lon-name=<lon-name> --lat-name=<lat-name>
+#     --homogenize
 #
 # For more information, run `python regrid_forcing.py -h`
 #
@@ -49,6 +50,13 @@ def main():
         help="The path to the forcing file to interpolate.",
     )
 
+    regrid.parser.add_argument(
+        "--homogenize",
+        action="store_true",
+        default=False,
+        help="Replace values with their horizontal mean after regridding.",
+    )
+
     regrid.parser.description = (
         regrid.parser.description + " For use in the MOM data_table."
     )
@@ -62,6 +70,10 @@ def main():
     regrid.regrid_forcing()
 
     forcing_regrid = regrid.forcing_regrid
+
+    if regrid.args.homogenize:
+        horiz_mean = forcing_regrid.mean(dim=("ny", "nx"))
+        forcing_regrid = forcing_regrid * 0 + horiz_mean
 
     # Add metadata required by data_table
     # forcing_regrid = forcing_regrid.rename({"nyp": "ny", "nxp": "nx"})
@@ -88,6 +100,8 @@ def main():
         f"python3 {os.path.basename(this_file)} --forcing-filename={regrid.forcing_filename} "
         f"{regrid.runcmd_args}"
     )
+    if regrid.args.homogenize:
+        runcmd += " --homogenize"
 
     global_attrs = {
         "history": get_provenance_metadata(this_file, runcmd),
