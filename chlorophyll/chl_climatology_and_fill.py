@@ -33,102 +33,15 @@ from pathlib import Path
 
 import numpy as np
 import xarray as xr
-import regionmask
-from scipy import ndimage
-import scipy.sparse as sp
-import scipy.sparse.linalg as spla
 from distributed import Client
 
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
-from scripts_common import get_provenance_metadata, md5sum
+from regrid_common import fill_ocean_horiz
+from scripts_common import get_provenance_metadata
 
 xr.set_options(keep_attrs=True)
-
-
-def fill_missing_data(field, wet_mask, maxiter=0):
-    """
-    Fill missing ocean values using a sparse Laplacian solve.
-    Adapted from https://github.com/adcroft/interp_and_fill/blob/main/Interpolate%20and%20fill%20SeaWIFS.ipynb
-
-    Parameters
-    ----------
-    field : numpy.ndarray
-        Input data containing missing data
-    wet_mask : numpy.ndarray
-        Wet cell mask (0 land, 1 ocean)
-
-    Returns
-    -------
-    numpy.ma.array
-        Data array with missing ocean points filled.
-    """
-
-    def _process_neighbour(n, jn, in_):
-        """Process neighbour at (jn, in_) for row n."""
-        if wet_mask[jn, in_] <= 0:
-            return
-
-        ld[n] -= 1
-        idx = ind[jn, in_]
-
-        if idx >= 0:
-            A[n, idx] = 1.0
-        else:
-            b[n] -= field[jn, in_]
-
-    nj, ni = field.shape
-    missing_mask = np.isnan(field)
-    field = np.where(missing_mask, 0, field)
-
-    # Index lookup for missing points
-    missing_j, missing_i = np.where(missing_mask & (wet_mask > 0))
-    n_missing = missing_j.size
-    ind = np.full(field.shape, -1, dtype=int)
-    ind[missing_j, missing_i] = np.arange(n_missing)
-
-    # Sparse matrix in LIL format (fast incremental building)
-    A = sp.lil_matrix((n_missing, n_missing))
-    b = np.zeros(n_missing)
-    ld = np.zeros(n_missing)
-
-    # Build matrix row-by-row
-    for n in range(n_missing):
-        j = missing_j[n]
-        i = missing_i[n]
-
-        im1 = (i - 1) % ni
-        ip1 = (i + 1) % ni
-        jm1 = j - 1 if j > 0 else 0
-        jp1 = j + 1 if j < nj - 1 else nj - 1
-
-        if j > 0:
-            _process_neighbour(n, jm1, i)
-        _process_neighbour(n, j, im1)
-        _process_neighbour(n, j, ip1)
-        if j < nj - 1:
-            _process_neighbour(n, jp1, i)
-
-        # Tri-polar fold
-        if j == nj - 1:
-            fold_i = ni - 1 - i
-            _process_neighbour(n, j, fold_i)
-
-    # Set leading diagonal
-    b[ld >= 0] = 0.0
-    stabilizer = 1e-14
-    diag_vals = ld - stabilizer
-    A[np.arange(n_missing), np.arange(n_missing)] = diag_vals
-
-    # Convert to CSR and solve
-    A = A.tocsr()
-    x = spla.spsolve(A, b)
-
-    # Fill the missing values
-    field[missing_j, missing_i] = x
-
-    return np.where(wet_mask, field, np.NaN)
 
 
 def main():
@@ -174,7 +87,7 @@ def main():
 
     print("Calculating the monthly climatology...")
 
-    with Client(threads_per_worker=1) as client:
+    with Client(threads_per_worker=1):
         ds = xr.open_mfdataset(
             input_files,
             chunks={"lat": 1024, "lon": 1024},
@@ -183,32 +96,21 @@ def main():
         )
         chl = ds[["CHL"]].groupby("time.month").mean("time").compute()
 
-    print("Filling missing data...")
-
-    # Create land mask, eroded to ensure we have values at wet cells near coasts
-    land = (
-        regionmask.defined_regions.natural_earth_v5_0_0.land_110.mask(chl).values == 0.0
-    )
-    land_eroded = ndimage.binary_erosion(land, structure=np.ones((200, 200)))
-
     # Fill missing data for each month
+    print("Filling missing data...")
+    chl_filled = []
     for month in range(1, 13):
         print(f"  Filling month {month}...")
-
-        chl_month = chl["CHL"].sel(month=month)
-
-        # Remove chl values on land
-        chl_month = chl_month.where(np.logical_not(land)).values
-
-        # Fill missing values in two steps. First, fill the missing wet cells, then
-        # the eroded land areas. If this is done in one step, high CHL values near
-        # the coast have a larger weighting leading to larger values in high latitude
-        # filled regions.
-        chl_filled = fill_missing_data(chl_month, 1.0 - land)
-
-        chl["CHL"].sel(month=month).values[:] = fill_missing_data(
-            chl_filled, 1.0 - land_eroded
+        chl_filled.append(
+            fill_ocean_horiz(
+                chl["CHL"].sel(month=month),
+                top_bound="regular",
+                n_erode=200,
+                erode_first=False,
+            )
         )
+
+    chl["CHL"] = xr.concat(chl_filled, dim="month")
 
     # Add time array
     calendar = "gregorian"
