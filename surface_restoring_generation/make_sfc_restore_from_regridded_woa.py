@@ -103,15 +103,16 @@ def main(input_path, variable_to_smooth, output_file):
     )
 
     # Save
+    out_ds[variable_to_smooth].encoding.setdefault(
+        "_FillValue", 1e20
+    )  #  Set _FillValue if not already set
+    out_ds[variable_to_smooth].encoding |= {
+        "chunksizes": (1, len(ds.lat), len(ds.lon)),
+        "compression": "zlib",
+        "complevel": 2,
+    }
     out_ds.to_netcdf(
         output_file,
-        encoding={
-            variable_to_smooth: {
-                "chunksizes": (1, len(ds.lat), len(ds.lon)),
-                "compression": "zlib",
-                "complevel": 2,
-            }
-        },
         unlimited_dims="time",
     )
 
