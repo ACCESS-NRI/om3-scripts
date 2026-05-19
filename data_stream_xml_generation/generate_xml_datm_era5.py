@@ -32,6 +32,8 @@ from scripts_common import get_provenance_metadata
 # timestamp is at the midpoint of the represented hour. Instantaneous fields keep offset=0.
 #
 # stream_name, era5_prefix, [(source_var, cime_var), ...], mapalgo, offset_seconds
+#
+# CDEPS derives ERA5 shortwave bands from ssrd; omit albedo-like aluv/alni streams.
 STREAM_SPECS = [
     ("ERA5.RAINC", "cp", [("cp", "Faxa_rainc")], "consf", -1800),
     ("ERA5.RAINL", "lsp", [("lsp", "Faxa_rainl")], "consf", -1800),
@@ -40,10 +42,6 @@ STREAM_SPECS = [
     ("ERA5.LWDN", "strd", [("strd", "Faxa_lwdn")], "consf", -1800),
     ("ERA5.SWDN", "ssrd", [("ssrd", "Faxa_swdn")], "consf", -1800),
     ("ERA5.SWNET", "ssr", [("ssr", "Faxa_swnet")], "consf", -1800),
-    ("ERA5.SWVDR", "aluvp", [("aluvp", "Faxa_swvdr")], "patch", 0),
-    ("ERA5.SWVDF", "aluvd", [("aluvd", "Faxa_swvdf")], "patch", 0),
-    ("ERA5.SWNDR", "alnip", [("alnip", "Faxa_swndr")], "patch", 0),
-    ("ERA5.SWNDF", "alnid", [("alnid", "Faxa_swndf")], "patch", 0),
     (
         "ERA5.SLP_10",
         "msl",
