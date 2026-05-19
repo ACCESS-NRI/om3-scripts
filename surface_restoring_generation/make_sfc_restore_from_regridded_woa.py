@@ -5,28 +5,25 @@
 # Contact: Ezhilsabareesh Kannadasan <ezhilsabareesh.kannadasan@anu.edu.au>
 
 """
-This script processes and smooths sea water salinity data from the initial conditions
+This script processes and smooths sea surface data from the initial conditions
 NetCDF files generated using https://github.com/ACCESS-NRI/initial_conditions_access-om3/.
-It applies a uniform smoothing filter to the surface layer (0m depth) of the salinity for
-each month and concatenates the smoothed data into a single output NetCDF file.
+It applies a uniform smoothing filter to the surface layer (0m depth) of the specified
+variable for each month and concatenates the smoothed data into a single output NetCDF file.
 
-The input files are 'woa23_ts_<month>_mom.nc' at the resolution of the desired output,
-
-The script creates an output file 'salt_sfc_restore.nc' which contains the smoothed
-and concatenated salinity data for 12 months.
+The input files are 'woa23_ts_<month>_mom.nc' at the resolution of the desired output.
 
 Usage:
     python make_salt_sfc_restore_from_regridded_woa.py --input_path=<input_directory>
-    --salt_var=<salt_var_name> --output_path=<output_directory>
+    --var=<var_name> --output_file=<output_file>
 
 Example:
     python make_salt_sfc_restore_from_regridded_woa.py --input_path=/path/to/input/dir
-    --salt_var=asalt --output_path=/path/to/output/dir
+    --var=asalt --output_file=/path/to/output/salt_sfc_restore.nc
 
 Command-line arguments:
     - input_path: The directory containing the initial conditions NetCDF files.
-    - salt_var: The name of the salt variable to process.
-    - output_path: The directory where the output smoothed and concatenated NetCDF file will be saved.
+    - var: The name of the variable to process.
+    - output_file: The path to the output NetCDF file.
 """
 
 import xarray as xr
@@ -58,7 +55,7 @@ def smooth2d(src):
     return dest[ws:-ws, :]
 
 
-def main(input_path, variable_to_smooth, output_path):
+def main(input_path, variable_to_smooth, output_file):
 
     file_template = f"{input_path}/woa23_ts_{{:02d}}_mom.nc"
 
@@ -68,38 +65,37 @@ def main(input_path, variable_to_smooth, output_path):
         file_paths, chunks={"lat": -1, "lon": -1}, decode_times=False
     )
 
-    # Get the sea surface salinity
-    salt_da = ds[variable_to_smooth].isel(depth=0, drop=True)
+    # Get the sea surface value
+    da = ds[variable_to_smooth].isel(depth=0, drop=True)
 
-    # Smooth the salinity in x & y (for each month)
-    salt_smoothed_da = xr.apply_ufunc(
+    # Smooth in x & y (for each month)
+    smoothed_da = xr.apply_ufunc(
         smooth2d,
-        salt_da,
+        da,
         input_core_dims=[["lat", "lon"]],
         output_core_dims=[["lat", "lon"]],
         vectorize=True,
         dask="parallelized",
     )
 
-    salt_smoothed_da = salt_smoothed_da.assign_attrs(
+    smoothed_da = smoothed_da.assign_attrs(
         {
-            "standard_name": salt_da.attrs["standard_name"],
-            "long_name": f"{salt_da.attrs['long_name']} at 0m",
-            "units": salt_da.attrs["units"],
+            "standard_name": da.attrs["standard_name"],
+            "long_name": f"{da.attrs['long_name']} at 0m",
+            "units": da.attrs["units"],
         }
     )
 
-    salt_ds = salt_smoothed_da.to_dataset()
-    salt_ds["climatology_bounds"] = ds["climatology_bounds"]
-    salt_ds["time"].attrs["calendar"] = "gregorian"
+    out_ds = smoothed_da.to_dataset()
+    out_ds["climatology_bounds"] = ds["climatology_bounds"]
+    out_ds["time"].attrs["calendar"] = "gregorian"
     # calendar is technically proleptic_gregorian, but FMS doesn't recognise this
 
-    salt_ds["time"] = salt_ds.time.assign_attrs({"modulo": " "})
+    out_ds["time"] = out_ds.time.assign_attrs({"modulo": " "})
 
-    # Check git status of this .py file
     this_file = os.path.normpath(__file__)
-    runcmd = f"python3 {os.path.basename(this_file)} --input_path={input_path} --salt_var={variable_to_smooth} --output_path={output_path}"
-    salt_ds = salt_ds.assign_attrs(
+    runcmd = f"python3 {os.path.basename(this_file)} --input_path={input_path} --var={variable_to_smooth} --output_file={output_file}"
+    out_ds = out_ds.assign_attrs(
         {
             "history": get_provenance_metadata(this_file, runcmd),
             "input_files": [f"{f}(md5sum:{md5sum(f)})" for f in file_paths],
@@ -107,8 +103,7 @@ def main(input_path, variable_to_smooth, output_path):
     )
 
     # Save
-    output_file = f"{output_path}/salt_sfc_restore.nc"
-    salt_ds.to_netcdf(
+    out_ds.to_netcdf(
         output_file,
         encoding={
             variable_to_smooth: {
@@ -134,17 +129,17 @@ if __name__ == "__main__":
         help="Path to the directory containing input NetCDF files.",
     )
     parser.add_argument(
-        "--salt_var",
+        "--var",
         type=str,
         required=True,
-        help="The name of the salt variable to process.",
+        help="The name of the variable to process.",
     )
     parser.add_argument(
-        "--output_path",
+        "--output_file",
         type=str,
         required=True,
-        help="Path to the directory where the output NetCDF file will be saved.",
+        help="Path to the output NetCDF file.",
     )
     args = parser.parse_args()
 
-    main(args.input_path, args.salt_var, args.output_path)
+    main(args.input_path, args.var, args.output_file)
