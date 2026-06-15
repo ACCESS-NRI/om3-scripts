@@ -17,7 +17,15 @@ set -euo pipefail
 
 SCRIPT_DIR="${PBS_O_WORKDIR}"
 
+# ── user configuration ─────────────────────────────────────────────────────────
+# Directory where yearly rechunked files will be written:
+#   {OUTPUT_DIR}/{stream}/{stream}_era5_oper_sfc_{YYYYMMDD}-{YYYYMMDD}.nc
+OUTPUT_DIR="/g/data/tm70/ek4684/era5_rechunked_1h_yearly"
+# ──────────────────────────────────────────────────────────────────────────────
+
 module use /g/data/xp65/public/modules
 module load conda/analysis3-26.02
 
-python3 "${SCRIPT_DIR}/make_era5_yearly_rechunked.py" --workers "${PBS_NCPUS:-24}"
+python3 "${SCRIPT_DIR}/make_era5_yearly_rechunked.py" \
+    --output-dir "${OUTPUT_DIR}"                       \
+    --workers    "${PBS_NCPUS:-24}"
