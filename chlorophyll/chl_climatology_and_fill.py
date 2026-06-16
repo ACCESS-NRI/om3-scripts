@@ -105,7 +105,7 @@ def main():
             fill_ocean_horiz(
                 chl["CHL"].sel(month=month),
                 top_bound="regular",
-                n_erode=200,
+                n_erode=250,
                 erode_first=False,
             )
         )
