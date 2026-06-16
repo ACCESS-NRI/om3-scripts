@@ -69,7 +69,7 @@ def main():
             sys.exit(1)
         out_dirs = [args.out_dir]
     else:
-        out_dirs = sorted(glob.glob("archive/output*[0-9]"), reverse=True)
+        out_dirs = sorted(glob.glob("archive/output*"), reverse=True)
 
     # Support ACCESS-OM3 and ACCESS-OM2 output files
     file_patterns = [
