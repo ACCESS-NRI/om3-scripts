@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2025 ACCESS-NRI and contributors. See the top-level COPYRIGHT file for details.
+# Copyright 2026 ACCESS-NRI and contributors. See the top-level COPYRIGHT file for details.
 # SPDX-License-Identifier: Apache-2.0
 
 # =========================================================================================
@@ -148,23 +148,6 @@ def process_one(stream, year, source_base, output_base, overwrite, runcmd):
         logging.error(f"No .nc files in {source_dir}")
         return False
 
-    # Derive output filename from first/last source file date stamps
-    m0 = re.search(r"(\d{8})-(\d{8})", source_files[0].name)
-    ml = re.search(r"(\d{8})-(\d{8})", source_files[-1].name)
-    start = m0.group(1) if m0 else f"{year}0101"
-    end = ml.group(2) if ml else f"{year}1231"
-
-    out_dir = Path(output_base) / stream
-    out_path = out_dir / f"{stream}_era5_oper_sfc_{start}-{end}.nc"
-
-    if out_path.exists() and not overwrite:
-        logging.info(f"SKIP {stream}/{year}: output already exists — {out_path}")
-        return True
-
-    logging.info(
-        f"Processing {stream}/{year}: {len(source_files)} files → {out_path.name}"
-    )
-
     # mask_and_scale=False preserves packed int16 values;
     # without this xarray unpacks to float64 (8x storage, wrong output dtype).
     # Full-spatial Dask chunks (one per monthly file) avoids the 8x8=64 source-chunk
@@ -176,6 +159,21 @@ def process_one(stream, year, source_base, output_base, overwrite, runcmd):
         combine="by_coords",
         mask_and_scale=False,
         chunks={"time": 744, "latitude": 721, "longitude": 1440},
+    )
+
+    # Use dataset times so partial-year outputs reflect their actual coverage.
+    start = str(ds.time.min().dt.strftime("%Y%m%d").values)
+    end = str(ds.time.max().dt.strftime("%Y%m%d").values)
+
+    out_dir = Path(output_base) / stream
+    out_path = out_dir / f"{stream}_era5_oper_sfc_{start}-{end}.nc"
+
+    if out_path.exists() and not overwrite:
+        logging.info(f"SKIP {stream}/{year}: output already exists — {out_path}")
+        return True
+
+    logging.info(
+        f"Processing {stream}/{year}: {len(source_files)} files → {out_path.name}"
     )
 
     # Provenance
