@@ -101,16 +101,19 @@ def drof_remapping_weights(mesh_filename, weights_filename, nx, ny, global_attrs
     # target for runoff is ocean cells which are adjacent land
     target_cells = ((land_neighbours & mask_2d) == 1).flatten()
 
+    # convert back to a DataArray
+    target_cells_da = xr.DataArray(target_cells, dims="elementCount")
+
     # Haversine distances expect lat first, lon second, so index coordDim backwards
     center_coords_rad = deg2rad(mod_mesh_ds.centerCoords.isel(coordDim=[1, 0]))
 
     # Make a BallTree from the ocean cells
     mask_tree = BallTree(
-        center_coords_rad.isel(elementCount=target_cells), metric="haversine"
+        center_coords_rad.where(target_cells_da, other=0, drop=True), metric="haversine"
     )
 
     # Index for the target_cells
-    target_cells_i = mod_mesh_ds.elementCount.sel(elementCount=target_cells)
+    target_cells_i = mod_mesh_ds.elementCount.where(target_cells_da, other=0, drop=True)
 
     # Using the Tree, look up the nearest ocean cell to every destination grid cell in our weights file. Note our
     # weights are indexed from 1 (i.e. Fortran style) but xarray starts from 0 (i.e. python style), so subract one from
