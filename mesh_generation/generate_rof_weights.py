@@ -112,7 +112,7 @@ def drof_remapping_weights(mesh_filename, weights_filename, nx, ny, global_attrs
         center_coords_rad.where(target_cells_da, drop=True), metric="haversine"
     )
 
-    # Index for the target_cells
+    # Index for the target_cells (other=0 preserves integer dtype)
     target_cells_i = mod_mesh_ds.elementCount.where(target_cells_da, other=0, drop=True)
 
     # Using the Tree, look up the nearest ocean cell to every destination grid cell in our weights file. Note our
