@@ -59,14 +59,17 @@ def mom6_mask_detection(ds, minimum_depth=0, masking_depth=None):
         raise ValueError("Cannot detect topog: dataset lacks 'depth' variable!")
     if minimum_depth < 0:
         raise ValueError("minimum depth cannot be negative")
-    if masking_depth > minimum_depth:
-        raise ValueError("MASKING_DEPTH must be less than or equal to MINIMUM_DEPTH!")
+
     depth = ds["depth"]
 
     # topog contains nans
     is_wet = ~np.isnan(depth)
 
     if masking_depth is not None:
+        if masking_depth > minimum_depth:
+            raise ValueError(
+                "MASKING_DEPTH must be less than or equal to MINIMUM_DEPTH!"
+            )
         mask = (depth > masking_depth) & is_wet
     else:
         mask = (depth > minimum_depth) & is_wet
@@ -237,7 +240,7 @@ class MomSuperGrid(BaseGrid):
         lon_name=None,
         lat_name=None,
         area_name=None,
-        minimum_depth=None,
+        minimum_depth=0,
         masking_depth=None,
     ):
         """
@@ -330,7 +333,7 @@ class LatLonGrid(BaseGrid):
         lon_name=None,
         lat_name=None,
         area_name=None,
-        minimum_depth=None,
+        minimum_depth=0,
         masking_depth=None,
     ):
         """
@@ -522,7 +525,7 @@ def main():
     parser.add_argument(
         "--minimum-depth",
         type=float,
-        default=None,
+        default=0,
         help=(
             "MINIMUM_DEPTH in metres. When a topography file is "
             "provided, any grid cell with depth <= MINIMUM_DEPTH is treated as land "
