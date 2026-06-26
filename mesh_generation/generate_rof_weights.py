@@ -99,18 +99,21 @@ def drof_remapping_weights(mesh_filename, weights_filename, nx, ny, global_attrs
     land_neighbours = binary_dilation(mask_2d == 0)
 
     # target for runoff is ocean cells which are adjacent land
-    target_cells = (land_neighbours & mask_2d).flatten()
+    target_cells = ((land_neighbours & mask_2d) == 1).flatten()
 
-    # Find index for all target cells
-    mask_target = (mod_mesh_ds.elementCount * target_cells).astype("int")
+    # convert back to a DataArray
+    target_cells_da = xr.DataArray(target_cells, dims="elementCount")
 
     # Haversine distances expect lat first, lon second, so index coordDim backwards
     center_coords_rad = deg2rad(mod_mesh_ds.centerCoords.isel(coordDim=[1, 0]))
 
     # Make a BallTree from the ocean cells
     mask_tree = BallTree(
-        center_coords_rad.isel(elementCount=mask_target), metric="haversine"
+        center_coords_rad.where(target_cells_da, drop=True), metric="haversine"
     )
+
+    # Index for the target_cells (other=0 preserves integer dtype)
+    target_cells_i = mod_mesh_ds.elementCount.where(target_cells_da, other=0, drop=True)
 
     # Using the Tree, look up the nearest ocean cell to every destination grid cell in our weights file. Note our
     # weights are indexed from 1 (i.e. Fortran style) but xarray starts from 0 (i.e. python style), so subract one from
@@ -120,7 +123,7 @@ def drof_remapping_weights(mesh_filename, weights_filename, nx, ny, global_attrs
         center_coords_rad.isel(elementCount=(weights_ds.row - 1)), return_distance=False
     )
 
-    new_row = mask_target[ii[:, 0]] + 1
+    new_row = target_cells_i[ii[:, 0]] + 1
 
     # Get the mesh element areas and adjust:
     # n.b. per CMEPS we are using the internally calculated areas, not the user provided ones.
@@ -191,7 +194,7 @@ def main():
     this_file = os.path.normpath(__file__)
 
     # Add some info about how the file was generated
-    runcmd = f"python3 {os.path.basename(this_file)} --mesh-filename={mesh_filename} --nx={args.nx} --ny={args.ny} --weights_filename={weights_filename} "
+    runcmd = f"python3 {os.path.basename(this_file)} --mesh_filename={mesh_filename} --nx={args.nx} --ny={args.ny} --weights_filename={weights_filename} "
 
     global_attrs = {"history": get_provenance_metadata(this_file, runcmd)}
 
