@@ -109,7 +109,7 @@ def drof_remapping_weights(mesh_filename, weights_filename, nx, ny, global_attrs
 
     # Make a BallTree from the ocean cells
     mask_tree = BallTree(
-        center_coords_rad.where(target_cells_da, other=0, drop=True), metric="haversine"
+        center_coords_rad.where(target_cells_da, drop=True), metric="haversine"
     )
 
     # Index for the target_cells
