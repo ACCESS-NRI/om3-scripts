@@ -42,7 +42,7 @@ from datetime import datetime
 
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
-from scripts_common import get_provenance_metadata, md5sum
+from scripts_common import get_provenance_metadata, get_provenance_input_files
 
 TEMP_WEIGHTS_F = "temp_weights.nc"
 COMP_ENCODING = {"complevel": 1, "compression": "zlib"}  # compression settings to use
@@ -139,7 +139,7 @@ def drof_remapping_weights(mesh_filename, weights_filename, nx, ny, global_attrs
     # add global attributes
     weights_ds.attrs = {
         "gridType": "unstructured mesh",
-        "inputFile": f"{mesh_filename} (md5 hash: {md5sum(mesh_filename)})",
+        "inputFile": get_provenance_input_files([mesh_filename]),
     }
 
     # add git info to history

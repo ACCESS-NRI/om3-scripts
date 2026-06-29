@@ -39,7 +39,7 @@ import xarray as xr
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
-from scripts_common import get_provenance_metadata, md5sum
+from scripts_common import get_provenance_metadata, get_provenance_input_files
 from mesh_generation.generate_mesh import mom6_mask_detection
 
 
@@ -388,12 +388,12 @@ def main():
 
         history = get_provenance_metadata(this_file, runcmd)
         global_attrs = {"history": history}
-        file_hashes = [
-            f"{args.high_res_topo_file} (md5 hash: {md5sum(args.high_res_topo_file)})",
-            f"{args.hgrid_file} (md5 hash: {md5sum(args.hgrid_file)})",
-            f"{args.topog_file} (md5 hash: {md5sum(args.topog_file)})",
-        ]
-        global_attrs["inputFile"] = ", ".join(file_hashes)
+
+        input_files = [args.high_res_topo_file, args.hgrid_file, args.topog_file]
+        global_attrs["inputFile"] = get_provenance_input_files(
+            get_provenance_input_files(input_files)
+        )
+
         h2_out.attrs.update(global_attrs)
 
         h2_out.to_netcdf(args.output)

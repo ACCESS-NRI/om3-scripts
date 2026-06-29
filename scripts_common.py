@@ -144,3 +144,13 @@ def md5sum(path):
         for chunk in iter(lambda: fd.read(length), b""):
             md5.update(chunk)
     return md5.hexdigest()
+
+
+def get_provenance_input_files(input_files):
+    """
+    Return a formatted string of provided input files and their md5 hashes
+    """
+    file_hashes = []
+    for input in input_files:
+        file_hashes.append(f"{os.path.abspath(input)} (md5 hash: {md5sum(input)})")
+    return ", ".join(file_hashes)

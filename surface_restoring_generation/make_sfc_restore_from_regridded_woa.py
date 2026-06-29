@@ -38,7 +38,7 @@ import sys
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
-from scripts_common import get_provenance_metadata, md5sum
+from scripts_common import get_provenance_metadata, get_provenance_input_files
 
 
 def smooth2d(src):
@@ -100,7 +100,7 @@ def main(input_path, variable_to_smooth, output_file):
     out_ds = out_ds.assign_attrs(
         {
             "history": get_provenance_metadata(this_file, runcmd),
-            "input_files": [f"{f}(md5sum:{md5sum(f)})" for f in file_paths],
+            "input_files": get_provenance_input_files(file_paths),
         }
     )
 

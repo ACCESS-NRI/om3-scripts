@@ -43,7 +43,7 @@ import warnings
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
-from scripts_common import get_provenance_metadata, md5sum
+from scripts_common import get_provenance_metadata, get_provenance_input_files
 
 EARTH_R = 6.37122e6
 
@@ -205,11 +205,7 @@ class BaseGrid:
             "timeGenerated": f"{datetime.now()}",
             "created_by": f"{os.environ.get('USER')}",
         }
-        if self.inputs:
-            file_hashes = []
-            for input in self.inputs:
-                file_hashes.append(f"{input} (md5 hash: {md5sum(input)})")
-            ds.attrs["inputFile"] = ", ".join(file_hashes)
+        ds.attrs["inputFile"] = get_provenance_input_files(self.inputs)
 
         # add git info to history
         if global_attrs:

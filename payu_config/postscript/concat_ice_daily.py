@@ -29,7 +29,7 @@ import sys
 
 path_root = Path(__file__).parents[2]
 sys.path.append(str(path_root))
-from scripts_common import get_provenance_metadata, md5sum
+from scripts_common import get_provenance_metadata
 
 CICE_DAILY_FN = "access-om3.cice.1day.mean.????-??-??.nc"
 MONTHLY_STUB_FN = "access-om3.cice.1day.mean."

@@ -135,7 +135,7 @@ from dataclasses import dataclass
 
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
-from scripts_common import get_provenance_metadata, md5sum
+from scripts_common import get_provenance_metadata, get_provenance_input_files
 
 
 def coriolis_f(lat: xr.DataArray) -> xr.DataArray:
@@ -856,12 +856,10 @@ def main():
 
         history = get_provenance_metadata(this_file, runcmd)
         global_attrs = {"history": history}
-        file_hashes = [
-            f"{args.woa_temp_file} (md5 hash: {md5sum(args.woa_temp_file)})",
-            f"{args.woa_salt_file} (md5 hash: {md5sum(args.woa_salt_file)})",
-            f"{args.synbath_file} (md5 hash: {md5sum(args.synbath_file)})",
-        ]
-        global_attrs["inputFile"] = ", ".join(file_hashes)
+
+        input_files = [args.woa_temp_file, args.woa_salt_file, args.synbath_file]
+        global_attrs["inputFile"] = get_provenance_input_files(input_files)
+
         ds_woa_output.attrs.update(global_attrs)
 
         ds_woa_output.to_netcdf(args.woa_intermediate_file)

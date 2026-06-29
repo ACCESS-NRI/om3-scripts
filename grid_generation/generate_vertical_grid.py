@@ -38,7 +38,7 @@ import sys
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
-from scripts_common import get_provenance_metadata, md5sum
+from scripts_common import get_provenance_metadata
 
 # Define a small constant to initialize the iteration and prevent numerical issues
 epsilon = 0.001

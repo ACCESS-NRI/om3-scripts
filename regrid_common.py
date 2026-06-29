@@ -216,17 +216,12 @@ class Regrid_Common:
         forcing_regrid = self.forcing_regrid
 
         # Info about input data used
-        file_hashes = [
-            f"{self.forcing_filename} (md5 hash: {md5sum(self.forcing_filename)})",
-            f"{self.hgrid_filename} (md5 hash: {md5sum(self.hgrid_filename)})",
-        ]
+        input_files = [self.forcing_filename, self.hgrid_filename]
         if self.mask_filename:
-            file_hashes.append(
-                f"{self.mask_filename} (md5 hash: {md5sum(self.mask_filename)})"
-            )
+            input_files.append(self.mask_filename)
 
         global_attrs = {
-            "inputFile": ", ".join(file_hashes),
+            "inputFile": get_provenance_input_files(input_files),
         }
         forcing_regrid.attrs = forcing_regrid.attrs | global_attrs
 
