@@ -277,16 +277,8 @@ def main():
     tideamp = tideamp.rename({"x": "xh", "y": "yh"})
 
     # Add provenance metadata and MD5 hashes for input files.
-    this_file = os.path.normpath(__file__)
-    runcmd = (
-        f"python3 {os.path.basename(this_file)} "
-        f"--hgrid-file={args.hgrid_file} "
-        f"--topog-file={args.topog_file} "
-        f"--method={args.method} "
-        f"--data-path={args.data_path} "
-        f"--output={args.output} "
-    )
-
+    this_file = sys.argv[0]
+    runcmd = f"{sys.executable} {' '.join(sys.argv)}"
     history = get_provenance_metadata(this_file, runcmd)
     global_attrs = {"history": history}
 

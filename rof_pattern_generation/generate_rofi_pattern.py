@@ -179,13 +179,9 @@ def main():
         "units": "days since 0001-01-01 00:00:00",
     }
 
-    # Add some info about how the file was generated
-    this_file = os.path.normpath(__file__)
-
-    runcmd = (
-        f"python3 {os.path.basename(this_file)} --topog-file={regrid.args.topog_file} "
-        f"{regrid.runcmd_args}"
-    )
+    # Obtain metadata
+    this_file = sys.argv[0]
+    runcmd = f"{sys.executable} {' '.join(sys.argv)}"
 
     # Info about input data used
     file_hashes = [

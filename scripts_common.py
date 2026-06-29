@@ -127,7 +127,7 @@ def get_provenance_metadata(file, runcmd):
         warn(
             f"{file} not under git version control! Add your file to a repository before generating any production output."
         )
-        prepend += f"{file}: "
+        prepend += f"{os.path.abspath(file)}: "
 
     return prepend + runcmd
 

@@ -70,13 +70,9 @@ def main():
     input_directory = os.path.abspath(args.input_directory)
     output_filename = os.path.abspath(args.output_filename)
 
-    this_file = os.path.normpath(__file__)
-
-    # Add some info about how the file was generated
-    runcmd = (
-        f"python3 {os.path.basename(this_file)} --input-directory={input_directory} "
-        f"--output-filename={output_filename}"
-    )
+    # Obtain metadata
+    this_file = sys.argv[0]
+    runcmd = f"{sys.executable} {' '.join(sys.argv)}"
 
     history_attrs = {
         "history": get_provenance_metadata(this_file, runcmd),

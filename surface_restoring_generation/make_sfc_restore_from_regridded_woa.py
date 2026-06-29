@@ -93,8 +93,10 @@ def main(input_path, variable_to_smooth, output_file):
 
     out_ds["time"] = out_ds.time.assign_attrs({"modulo": " "})
 
-    this_file = os.path.normpath(__file__)
-    runcmd = f"python3 {os.path.basename(this_file)} --input_path={input_path} --var={variable_to_smooth} --output_file={output_file}"
+    # Obtain metadata
+    this_file = sys.argv[0]
+    runcmd = f"{sys.executable} {' '.join(sys.argv)}"
+
     out_ds = out_ds.assign_attrs(
         {
             "history": get_provenance_metadata(this_file, runcmd),

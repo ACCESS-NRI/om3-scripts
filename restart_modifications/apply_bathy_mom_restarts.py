@@ -145,8 +145,9 @@ def main():
         print(f"[COPY] {tf} -> {out_f}")
         shutil.copy(tf, out_f)
 
-    this_file = os.path.normpath(__file__)
-    runcmd = f"python3 {os.path.basename(this_file)} --template_dir {args.template_dir} --old_dir {args.old_dir} --output_dir {args.output_dir} --template_prefix {args.template_prefix} --old_prefix {args.old_prefix} --nprocs {args.nprocs}"
+    # Obtain metadata
+    this_file = sys.argv[0]
+    runcmd = f"{sys.executable} {' '.join(sys.argv)}"
 
     print("[INFO] Starting update of variables...")
     # update each restart file on a different proc

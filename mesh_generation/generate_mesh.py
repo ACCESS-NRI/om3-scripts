@@ -589,26 +589,9 @@ def main():
     if topog_filename:
         topog_filename = os.path.abspath(topog_filename)
 
-    this_file = os.path.normpath(__file__)
-
-    # Add some info about how the file was generated
-    runcmd = (
-        f"python3 {os.path.basename(this_file)} --grid-type={grid_type} --grid-filename={grid_filename} "
-        f"--mesh-filename={mesh_filename}"
-    )
-    if topog_filename:
-        runcmd += f" --topog-filename={topog_filename}"
-        if minimum_depth:
-            runcmd += f" --minimum-depth={minimum_depth}"
-        if masking_depth:
-            runcmd += f" --masking-depth={masking_depth}"
-    runcmd += f" --wrap-lons={wrap_lons}"
-    if lon_name:
-        runcmd += f" --lon-name={lon_name}"
-    if lat_name:
-        runcmd += f" --lat-name={lat_name}"
-    if area_name:
-        runcmd += f" --area-name={area_name}"
+    # Obtain metadata
+    this_file = sys.argv[0]
+    runcmd = f"{sys.executable} {' '.join(sys.argv)}"
 
     global_attrs = {"history": get_provenance_metadata(this_file, runcmd)}
 

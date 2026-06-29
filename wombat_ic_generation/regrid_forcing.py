@@ -93,15 +93,9 @@ def main():
     forcing_regrid["nx"].encoding |= {"dtype": "float32"}
     forcing_regrid["ny"].encoding |= {"dtype": "float32"}
 
-    # Add some info about how the file was generated
-    this_file = os.path.normpath(__file__)
-
-    runcmd = (
-        f"python3 {os.path.basename(this_file)} --forcing-filename={regrid.forcing_filename} "
-        f"{regrid.runcmd_args}"
-    )
-    if regrid.args.homogenize:
-        runcmd += " --homogenize"
+    # Obtain metadata
+    this_file = sys.argv[0]
+    runcmd = f"{sys.executable} {' '.join(sys.argv)}"
 
     global_attrs = {
         "history": get_provenance_metadata(this_file, runcmd),

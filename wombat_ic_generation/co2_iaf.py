@@ -91,14 +91,9 @@ def main():
     hgrid_filename = os.path.abspath(args.hgrid_filename)
     output_filename = os.path.abspath(args.output_filename)
 
-    this_file = os.path.normpath(__file__)
-
-    # provenance metadata
-    runcmd = (
-        f"python3 {os.path.basename(this_file)} --co2-cmip-filename={co2_cmip_filename} "
-        f"--co2-noaa-filename={co2_noaa_filename} --hgrid-filename={hgrid_filename} "
-        f"--output-filename={output_filename}"
-    )
+    # Obtain metadata
+    this_file = sys.argv[0]
+    runcmd = f"{sys.executable} {' '.join(sys.argv)}"
 
     file_hashes = [
         f"{co2_cmip_filename} (md5 hash: {md5sum(co2_cmip_filename)})",

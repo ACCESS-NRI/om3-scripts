@@ -157,14 +157,9 @@ def main():
         unmask_file(f, mask, missing_value, skip_vars=skip_vars)
         apply_mask_file(f, mask, skip_vars=skip_vars)
 
-        this_file = os.path.normpath(__file__)
-        runcmd = (
-            f"python3 {os.path.basename(this_file)} "
-            f"--input_file {args.input_file} "
-            f"--output_file {args.output_file} "
-            f"--mask_file {args.mask_file} "
-            f"--mask_var {args.mask_var}"
-        )
+        # Obtain metadata
+        this_file = sys.argv[0]
+        runcmd = f"{sys.executable} {' '.join(sys.argv)}"
 
         # Add metadata
         f.setncattr(

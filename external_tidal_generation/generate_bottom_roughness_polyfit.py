@@ -384,15 +384,7 @@ def main():
 
         # Add provenance metadata and MD5 hashes for input files.
         this_file = os.path.normpath(__file__)
-        runcmd = (
-            f"mpirun -n $PBS_NCPUS python3 {os.path.basename(this_file)} "
-            f"--high-res-topo-file={args.high_res_topo_file} "
-            f"--hgrid-file={args.hgrid_file} "
-            f"--topog-file={args.topog_file} "
-            f"--chunk-lat={args.chunk_lat} "
-            f"--chunk-lon={args.chunk_lon} "
-            f"--output={args.output}"
-        )
+        runcmd = f"mpirun -n $PBS_NCPUS python3 {' '.join(sys.argv)} "
 
         history = get_provenance_metadata(this_file, runcmd)
         global_attrs = {"history": history}

@@ -86,7 +86,7 @@ root = Element("file", id="stream", version="2.0")
 
 # Obtain metadata
 this_file = sys.argv[0]
-runcmd = " ".join(sys.argv)
+runcmd = f"{sys.executable} {' '.join(sys.argv)}"
 metadata_info = get_provenance_metadata(this_file, runcmd)
 
 # Add metadata

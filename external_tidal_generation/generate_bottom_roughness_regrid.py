@@ -396,17 +396,8 @@ def main():
     print("Regridding done!")
 
     # Add provenance metadata and MD5 hashes for input files.
-    this_file = os.path.normpath(__file__)
-    runcmd = (
-        f"python3 {os.path.basename(this_file)} "
-        f"--topog_file={args.topog_file} "
-        f"--hgrid_file={args.hgrid_file} "
-        f"--woa_intermediate_file={args.woa_intermediate_file} "
-        f"--output_file={args.output_file} "
-        f"--method={args.method} "
-        f"--periodic_regrid={args.periodic_regrid} "
-        f"--periodic_lon_laplace={args.periodic_lon_laplace}"
-    )
+    this_file = sys.argv[0]
+    runcmd = f"{sys.executable} {' '.join(sys.argv)}"
 
     history = get_provenance_metadata(this_file, runcmd)
     global_attrs = {"history": history}

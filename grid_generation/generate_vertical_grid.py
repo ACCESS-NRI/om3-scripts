@@ -91,15 +91,9 @@ def generate_vertical_grid(H, dzd, min_dz, depfac, output_filename):
         : len(real_prop_z)
     ]  # Trim the spacing values to match the adjusted depth levels
 
-    this_file = os.path.normpath(__file__)
-
-    # Add some info about how the file was generated
-    runcmd = (
-        f"python3 {os.path.basename(this_file)} --H={H} --depfac={depfac} "
-        f"--dzd={dzd} "
-        f"--min_dz={min_dz} "
-        f"--output={output_filename} "
-    )
+    # Obtain metadata
+    this_file = sys.argv[0]
+    runcmd = f"{sys.executable} {' '.join(sys.argv)}"
 
     # Write to NetCDF file
     write_netcdf_file(output_filename, real_prop_z, this_file, runcmd)

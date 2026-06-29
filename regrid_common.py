@@ -119,19 +119,6 @@ class Regrid_Common:
         if self.mask_filename:
             self.mask_filename = os.path.abspath(self.mask_filename)
 
-        # some info about how the file was generated
-
-        runcmd_args = f"--hgrid-filename={self.hgrid_filename} --output-filename={self.output_filename}"
-
-        if self.mask_filename:
-            runcmd_args += f" --mask-filename={self.mask_filename}"
-        if self.lon_name:
-            runcmd_args += f" --lon-name={self.lon_name}"
-        if self.lat_name:
-            runcmd_args += f" --lat-name={self.lat_name}"
-
-        self.runcmd_args = runcmd_args
-
     ## NOTE: it's implied that forcing_filename is set outside this class
 
     def open_datasets(self):

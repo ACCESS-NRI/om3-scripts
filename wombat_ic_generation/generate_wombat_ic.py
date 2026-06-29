@@ -457,13 +457,9 @@ def main():
     wombat_version = args.wombat_version
     output_file = args.output_file
 
-    this_file = os.path.normpath(__file__)
-
-    # Add some info about how the file was generated
-    runcmd = (
-        f"python3 {this_file} --wombat-version={wombat_version} "
-        f"--output-file={os.path.abspath(output_file)}"
-    )
+    # Obtain metadata
+    this_file = sys.argv[0]
+    runcmd = f"{sys.executable} {' '.join(sys.argv)}"
 
     global_attrs = {
         "history": get_provenance_metadata(this_file, runcmd),
