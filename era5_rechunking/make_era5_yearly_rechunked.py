@@ -110,7 +110,9 @@ def _attrs_equal(left, right):
     left_arr = np.asarray(left)
     right_arr = np.asarray(right)
     if left_arr.shape or right_arr.shape:
-        return left_arr.shape == right_arr.shape and bool(np.array_equal(left_arr, right_arr))
+        return left_arr.shape == right_arr.shape and bool(
+            np.array_equal(left_arr, right_arr)
+        )
     return left == right
 
 
@@ -225,7 +227,11 @@ def _time_stamp(source_file, time_index):
         time_var = ds.variables["time"]
         time_var.set_auto_maskandscale(False)
         units = time_var.getncattr("units")
-        calendar_name = time_var.getncattr("calendar") if "calendar" in time_var.ncattrs() else "standard"
+        calendar_name = (
+            time_var.getncattr("calendar")
+            if "calendar" in time_var.ncattrs()
+            else "standard"
+        )
         dt = nc.num2date(
             time_var[time_index],
             units=units,
@@ -281,7 +287,11 @@ def _create_output_schema(out_ds, template_ds, varname):
         out_ds.createDimension(dim_name, None if dim_name == "time" else len(dim))
 
     for name, src_var in template_ds.variables.items():
-        fill_value = src_var.getncattr("_FillValue") if "_FillValue" in src_var.ncattrs() else None
+        fill_value = (
+            src_var.getncattr("_FillValue")
+            if "_FillValue" in src_var.ncattrs()
+            else None
+        )
         kwargs = {"fill_value": fill_value}
         if name == varname:
             kwargs.update(
@@ -324,15 +334,21 @@ def _copy_static_variables(template_ds, out_ds):
         dst_var[:] = src_var[:]
 
 
-def _write_yearly_file(source_files, tmp_path, stream, year, varname, runcmd, copy_time_block):
-    with nc.Dataset(str(source_files[0])) as template, nc.Dataset(str(tmp_path), "w", format="NETCDF4") as out_ds:
+def _write_yearly_file(
+    source_files, tmp_path, stream, year, varname, runcmd, copy_time_block
+):
+    with nc.Dataset(str(source_files[0])) as template, nc.Dataset(
+        str(tmp_path), "w", format="NETCDF4"
+    ) as out_ds:
         _create_output_schema(out_ds, template, varname)
         _copy_static_variables(template, out_ds)
 
         now_iso = _local_iso_timestamp()
         _copy_attrs(template, out_ds)
         old_title = template.getncattr("title") if "title" in template.ncattrs() else ""
-        old_history = template.getncattr("history") if "history" in template.ncattrs() else ""
+        old_history = (
+            template.getncattr("history") if "history" in template.ncattrs() else ""
+        )
         this_file = os.path.normpath(__file__)
         new_history = (
             f"{now_iso} rechunked from [93,91,180] to [1,721,1440] using netCDF4; "
@@ -340,7 +356,9 @@ def _write_yearly_file(source_files, tmp_path, stream, year, varname, runcmd, co
             + get_provenance_metadata(this_file, runcmd)
         )
         out_ds.setncattr("title", re.sub(r"\s+\d{8}-\d{8}$", f" {year}", old_title))
-        out_ds.setncattr("history", f"{new_history}\n{old_history}" if old_history else new_history)
+        out_ds.setncattr(
+            "history", f"{new_history}\n{old_history}" if old_history else new_history
+        )
         out_ds.setncattr("rechunked_from", f"{SOURCE_BASE}/{stream}/{year}/")
         out_ds.setncattr("rechunked_by", "Ezhilsabareesh Kannadasan (ek4684)")
         out_ds.setncattr("rechunked_date", now_iso)
@@ -366,7 +384,9 @@ def _write_yearly_file(source_files, tmp_path, stream, year, varname, runcmd, co
                     dst_var.set_auto_maskandscale(False)
                     for src_start in range(0, time_len, copy_time_block):
                         src_stop = min(src_start + copy_time_block, time_len)
-                        _copy_variable_slice(src_var, dst_var, src_start, src_stop, out_index + src_start)
+                        _copy_variable_slice(
+                            src_var, dst_var, src_start, src_stop, out_index + src_start
+                        )
                 out_index += time_len
 
 
@@ -385,7 +405,9 @@ def validate_preservation(out_path, source_files, varname):
     """Check output metadata and sampled raw packed values against source files."""
     with nc.Dataset(str(source_files[0])) as src0, nc.Dataset(str(out_path)) as out_ds:
         if set(src0.variables) != set(out_ds.variables):
-            raise RuntimeError("variable names differ between source template and output")
+            raise RuntimeError(
+                "variable names differ between source template and output"
+            )
 
         out_var = out_ds.variables[varname]
         src_var = src0.variables[varname]
@@ -440,7 +462,9 @@ def validate_preservation(out_path, source_files, varname):
         out_var = out_ds.variables[varname]
         out_var.set_auto_maskandscale(False)
         for global_index in sample_indices:
-            source_file, local_index = _source_for_global_index(source_files, global_index)
+            source_file, local_index = _source_for_global_index(
+                source_files, global_index
+            )
             with nc.Dataset(str(source_file)) as src_ds:
                 src_var = src_ds.variables[varname]
                 src_var.set_auto_maskandscale(False)
@@ -514,7 +538,9 @@ def process_one(
                 exc,
             )
         else:
-            logging.info("SKIP %s/%s: output already valid - %s", stream, year, out_path)
+            logging.info(
+                "SKIP %s/%s: output already valid - %s", stream, year, out_path
+            )
             return True
 
     logging.info(
@@ -534,7 +560,9 @@ def process_one(
 
     t0 = time.time()
     try:
-        _write_yearly_file(source_files, tmp_path, stream, year, varname, runcmd, copy_time_block)
+        _write_yearly_file(
+            source_files, tmp_path, stream, year, varname, runcmd, copy_time_block
+        )
         validate(
             tmp_path,
             varname,
@@ -752,7 +780,9 @@ def main():
 
     if args.run_task:
         if len(streams) != 1 or len(years) != 1:
-            parser.error("internal --run-task mode requires exactly one stream and one year")
+            parser.error(
+                "internal --run-task mode requires exactly one stream and one year"
+            )
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s %(levelname)s %(message)s",
@@ -773,7 +803,9 @@ def main():
             sys.exit(1)
         sys.exit(0 if ok else 1)
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
 
     tasks, skipped = _build_tasks(
         streams,
@@ -785,7 +817,14 @@ def main():
     )
 
     print(f"Streams:      {', '.join(streams)}", flush=True)
-    print(f"Years:        {years[0]}-{years[-1]} ({len(years)} total)" if len(years) > 1 else f"Years:        {years[0]}", flush=True)
+    print(
+        (
+            f"Years:        {years[0]}-{years[-1]} ({len(years)} total)"
+            if len(years) > 1
+            else f"Years:        {years[0]}"
+        ),
+        flush=True,
+    )
     print(f"Tasks to run: {len(tasks)}", flush=True)
     if not args.overwrite:
         print(f"Tasks skipped: {skipped}  (valid output already exists)", flush=True)
