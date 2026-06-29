@@ -42,13 +42,13 @@ from datetime import datetime
 
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
-from scripts_common import get_provenance_metadata, get_provenance_input_files
+from scripts_common import get_provenance_metadata
 
 TEMP_WEIGHTS_F = "temp_weights.nc"
 COMP_ENCODING = {"complevel": 1, "compression": "zlib"}  # compression settings to use
 
 
-def drof_remapping_weights(mesh_filename, weights_filename, nx, ny, global_attrs=None):
+def drof_remapping_weights(mesh_filename, weights_filename, nx, ny):
     # We need to generate remapping weights for use in the mediator, such that the overall volume of runoff is conserved
     # and no runoff is mapped onto land cells. Inside the mediator, the grid doesn't change as we run the mediator with
     # the ocean grid (the DROF component does the remapping from JRA grid to mediator grid). Therefore we use the
@@ -139,12 +139,10 @@ def drof_remapping_weights(mesh_filename, weights_filename, nx, ny, global_attrs
     # add global attributes
     weights_ds.attrs = {
         "gridType": "unstructured mesh",
-        "inputFile": get_provenance_input_files([mesh_filename]),
     }
 
     # add git info to history
-    if global_attrs:
-        weights_ds.attrs |= global_attrs
+    weights_ds.attrs |= get_provenance_metadata([mesh_filename])
 
     # save (compressed)
     encoding = {}
@@ -188,19 +186,8 @@ def main():
     )
 
     args = parser.parse_args()
-    mesh_filename = os.path.abspath(args.mesh_filename)
-    weights_filename = os.path.abspath(args.weights_filename)
 
-    this_file = os.path.normpath(__file__)
-
-    # Add some info about how the file was generated
-    runcmd = f"python3 {os.path.basename(this_file)} --mesh_filename={mesh_filename} --nx={args.nx} --ny={args.ny} --weights_filename={weights_filename} "
-
-    global_attrs = {"history": get_provenance_metadata(this_file, runcmd)}
-
-    drof_remapping_weights(
-        mesh_filename, weights_filename, args.nx, args.ny, global_attrs
-    )
+    drof_remapping_weights(args.mesh_filename, args.weights_filename, args.nx, args.ny)
 
     return True
 

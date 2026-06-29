@@ -134,9 +134,7 @@ class Concat_Ice_Daily:
         del daily_ds.attrs["comment3"]
 
         # Add some info about how the file was generated
-        this_file = os.path.normpath(__file__)
-        runcmd = f"python3 {os.path.basename(this_file)} --directory={os.path.abspath(directory)}"
-        daily_ds.attrs["postprocessing"] = get_provenance_metadata(this_file, runcmd)
+        daily_ds.attrs |= get_provenance_metadata()
 
         self.directory = directory
         self.daily_ds = daily_ds

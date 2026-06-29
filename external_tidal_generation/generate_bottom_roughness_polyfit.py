@@ -39,7 +39,7 @@ import xarray as xr
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
-from scripts_common import get_provenance_metadata, get_provenance_input_files
+from scripts_common import get_provenance_metadata
 from mesh_generation.generate_mesh import mom6_mask_detection
 
 
@@ -383,16 +383,9 @@ def main():
         )
 
         # Add provenance metadata and MD5 hashes for input files.
-        this_file = os.path.normpath(__file__)
         runcmd = f"mpirun -n $PBS_NCPUS python3 {' '.join(sys.argv)} "
-
-        history = get_provenance_metadata(this_file, runcmd)
-        global_attrs = {"history": history}
-
         input_files = [args.high_res_topo_file, args.hgrid_file, args.topog_file]
-        global_attrs["inputFile"] = get_provenance_input_files(
-            get_provenance_input_files(input_files)
-        )
+        global_attrs = get_provenance_metadata(input_files, runcmd)
 
         h2_out.attrs.update(global_attrs)
 

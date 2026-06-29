@@ -457,14 +457,11 @@ def main():
     wombat_version = args.wombat_version
     output_file = args.output_file
 
-    # Obtain metadata
-    this_file = sys.argv[0]
-    runcmd = f"{sys.executable} {' '.join(sys.argv)}"
-
     global_attrs = {
-        "history": get_provenance_metadata(this_file, runcmd),
         "inputFile": set(),
     }
+    # Obtain metadata
+    global_attrs |= get_provenance_metadata()
 
     xr.set_options(keep_attrs=True)
     template = _open_woa_data(

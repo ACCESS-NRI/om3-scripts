@@ -42,9 +42,7 @@ year_align = year_first
 root = Element("file", id="stream", version="2.0")
 
 # Obtain metadata
-this_file = sys.argv[0]
-runcmd = f"{sys.executable} {' '.join(sys.argv)}"
-metadata_info = get_provenance_metadata(this_file, runcmd)
+metadata_info = get_provenance_metadata()
 
 # Add metadata
 metadata = SubElement(root, "metadata")
@@ -52,7 +50,7 @@ SubElement(metadata, "File_type").text = "DROF xml file provides river runoff da
 SubElement(metadata, "date_generated").text = datetime.now().strftime(
     "%Y-%m-%d %H:%M:%S"
 )
-SubElement(metadata, "history").text = metadata_info
+SubElement(metadata, "history").text = metadata_info["history"]
 
 # Define the stream info names and corresponding var names
 stream_info_data = [

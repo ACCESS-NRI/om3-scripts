@@ -7,7 +7,7 @@
 
 
 import subprocess
-import os
+import os, sys
 from warnings import warn
 import io
 import hashlib
@@ -97,14 +97,19 @@ def username(file):
     return name
 
 
-def get_provenance_metadata(file, runcmd):
+def get_provenance_metadata(input_files=None, runcmd=None):
     """
-    Return a string with the provenance of the file being run. Warn if the file is not pushed to the git upstream repository.
+    Return a dictionary with the provenance of the file being run. Warn if the
+    file is not pushed to the git upstream repository.
 
     arguments:
         file: the path to the file being run
         runcmd: the command used to run the file (with any arguments)
     """
+
+    file = sys.argv[0]  # script being run
+    if runcmd is None:
+        runcmd = f"{sys.executable} {' '.join(sys.argv)}"
 
     prepend = (
         f"Created by {username(file)} on {datetime.now().strftime('%Y-%m-%d')}, using "
@@ -127,9 +132,14 @@ def get_provenance_metadata(file, runcmd):
         warn(
             f"{file} not under git version control! Add your file to a repository before generating any production output."
         )
-        prepend += f"{os.path.abspath(file)}: "
+        prepend += f"{os.path.abspath(file)} (md5 hash: {md5sum(file)}): "
 
-    return prepend + runcmd
+    attrs = {"history": prepend + runcmd}
+
+    if input_files is not None:
+        attrs["inputFile"] = get_provenance_input_files(input_files)
+
+    return attrs
 
 
 def md5sum(path):

@@ -62,17 +62,11 @@ def main():
     )
 
     args = parser.parse_args()
-    input_filename = os.path.abspath(args.input_filename)
-    output_filename = os.path.abspath(args.output_filename)
+    input_filename = args.input_filename
+    output_filename = args.output_filename
 
     # Obtain metadata
-    this_file = sys.argv[0]
-    runcmd = f"{sys.executable} {' '.join(sys.argv)}"
-
-    history_attrs = {
-        "history": get_provenance_metadata(this_file, runcmd),
-        "inputFile": f"{input_filename} (md5 hash: {md5sum(input_filename)})",
-    }
+    history_attrs = get_provenance_metadata(input_files=[input_filename])
 
     # Load the input data
     ds = xr.open_dataset(input_filename).compute()

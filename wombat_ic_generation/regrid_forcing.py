@@ -94,12 +94,7 @@ def main():
     forcing_regrid["ny"].encoding |= {"dtype": "float32"}
 
     # Obtain metadata
-    this_file = sys.argv[0]
-    runcmd = f"{sys.executable} {' '.join(sys.argv)}"
-
-    global_attrs = {
-        "history": get_provenance_metadata(this_file, runcmd),
-    }
+    global_attrs = get_provenance_metadata()
 
     forcing_regrid.attrs = forcing_regrid.attrs | global_attrs
 

@@ -38,7 +38,7 @@ import xesmf as xe
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
-from scripts_common import get_provenance_metadata, get_provenance_input_files
+from scripts_common import get_provenance_metadata
 from mesh_generation.generate_mesh import mom6_mask_detection
 
 PRIMARY_CONSTITUENTS = ["m2", "s2", "n2", "k2", "k1", "o1", "p1", "q1"]
@@ -277,15 +277,8 @@ def main():
     tideamp = tideamp.rename({"x": "xh", "y": "yh"})
 
     # Add provenance metadata and MD5 hashes for input files.
-    this_file = sys.argv[0]
-    runcmd = f"{sys.executable} {' '.join(sys.argv)}"
-    history = get_provenance_metadata(this_file, runcmd)
-    global_attrs = {"history": history}
-
-    # add md5 hashes for input files
     input_files = [args.hgrid_file, args.topog_file]
-    global_attrs["inputFile"] = get_provenance_input_files(input_files)
-
+    global_attrs = get_provenance_metadata(input_files)
     tideamp.attrs.update(global_attrs)
 
     tideamp.to_netcdf(args.output, unlimited_dims=["time"])

@@ -39,18 +39,12 @@ def description():
         warn(f"{METADATA_FILENAME} not found in config folder")
         uuid = False
 
-    # Check git status of this .py file
-    this_file = os.path.normpath(__file__)
-
-    runcmd = f"python3 {os.path.basename(this_file)}"
-
-    # Get string "Created using $file: $command"
-    provenance = get_provenance_metadata(this_file, runcmd)
+    provenance = get_provenance_metadata()
 
     if uuid:
-        description = f"intake-esm datastore for experiment {uuid}, in folder {os.getcwd()}. {provenance}. (md5 hash: {md5sum(this_file)})"
+        description = f"intake-esm datastore for experiment {uuid}, in folder {os.getcwd()}. {provenance['history']}."
     else:
-        description = f"intake-esm datastore for experiment in folder {os.getcwd()}. {provenance}. (md5 hash: {md5sum(this_file)})"
+        description = f"intake-esm datastore for experiment in folder {os.getcwd()}. {provenance['history']}."
 
     return description
 

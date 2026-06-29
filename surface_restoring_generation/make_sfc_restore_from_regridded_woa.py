@@ -38,7 +38,7 @@ import sys
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
-from scripts_common import get_provenance_metadata, get_provenance_input_files
+from scripts_common import get_provenance_metadata
 
 
 def smooth2d(src):
@@ -97,12 +97,7 @@ def main(input_path, variable_to_smooth, output_file):
     this_file = sys.argv[0]
     runcmd = f"{sys.executable} {' '.join(sys.argv)}"
 
-    out_ds = out_ds.assign_attrs(
-        {
-            "history": get_provenance_metadata(this_file, runcmd),
-            "input_files": get_provenance_input_files(file_paths),
-        }
-    )
+    out_ds = out_ds.assign_attrs(get_provenance_metadata(file_paths))
 
     # Save
     out_ds[variable_to_smooth].encoding.setdefault(

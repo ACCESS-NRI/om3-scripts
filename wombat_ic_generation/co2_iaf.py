@@ -38,7 +38,7 @@ import pandas as pd
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
-from scripts_common import get_provenance_metadata, get_provenance_input_files
+from scripts_common import get_provenance_metadata
 
 xr.set_options(keep_attrs=True)
 
@@ -94,10 +94,7 @@ def main():
 
     input_files = [co2_cmip_filename, co2_noaa_filename, hgrid_filename]
 
-    global_attrs = {
-        "history": get_provenance_metadata(this_file, runcmd),
-        "inputFile": get_provenance_input_files(input_files),
-    }
+    global_attrs = get_provenance_metadata(input_files)
 
     # Load the input data
     co2_cmip = xr.open_dataset(co2_cmip_filename, decode_cf=False).compute()

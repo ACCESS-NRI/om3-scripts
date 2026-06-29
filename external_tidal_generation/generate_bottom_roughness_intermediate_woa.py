@@ -135,7 +135,7 @@ from dataclasses import dataclass
 
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
-from scripts_common import get_provenance_metadata, get_provenance_input_files
+from scripts_common import get_provenance_metadata
 
 
 def coriolis_f(lat: xr.DataArray) -> xr.DataArray:
@@ -854,11 +854,8 @@ def main():
             f"--woa-intermediate-file={args.woa_intermediate_file} "
         )
 
-        history = get_provenance_metadata(this_file, runcmd)
-        global_attrs = {"history": history}
-
         input_files = [args.woa_temp_file, args.woa_salt_file, args.synbath_file]
-        global_attrs["inputFile"] = get_provenance_input_files(input_files)
+        global_attrs = get_provenance_metadata(input_files)
 
         ds_woa_output.attrs.update(global_attrs)
 

@@ -53,7 +53,7 @@ import scipy.sparse.linalg as spla
 
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
-from scripts_common import get_provenance_metadata, get_provenance_input_files
+from scripts_common import get_provenance_metadata
 from mesh_generation.generate_mesh import mom6_mask_detection
 
 
@@ -396,15 +396,8 @@ def main():
     print("Regridding done!")
 
     # Add provenance metadata and MD5 hashes for input files.
-    this_file = sys.argv[0]
-    runcmd = f"{sys.executable} {' '.join(sys.argv)}"
-
-    history = get_provenance_metadata(this_file, runcmd)
-    global_attrs = {"history": history}
-
     input_files = [args.hgrid_file, args.topog_file, args.woa_intermediate_file]
-    global_attrs["inputFile"] = get_provenance_input_files(input_files)
-
+    global_attrs = get_provenance_metadata(input_files)
     regrid_depth_var.attrs.update(global_attrs)
 
     output_path = Path(args.output_file)

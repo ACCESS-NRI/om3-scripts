@@ -40,7 +40,7 @@ path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
 from regrid_common import Regrid_Common
-from scripts_common import get_provenance_metadata, get_provenance_input_files
+from scripts_common import get_provenance_metadata
 from mesh_generation.generate_mesh import mom6_mask_detection
 
 # in a climatology, with 365 day calendar, whats the day of the middle of each month
@@ -195,9 +195,8 @@ def main():
 
     global_attrs |= {
         "description": "Mankoff 2025 iceberg spreading climatology remapped onto an ACCESS-OM3 grid",
-        "history": get_provenance_metadata(this_file, runcmd),
-        "inputFile": get_provenance_input_files(input_files),
     }
+    global_attrs |= get_provenance_metadata(input_files)
 
     weights_ds.attrs = weights_ds.attrs | global_attrs
 

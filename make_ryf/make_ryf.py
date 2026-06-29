@@ -38,7 +38,7 @@ import sys
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
-from scripts_common import get_provenance_metadata, get_provenance_input_files
+from scripts_common import get_provenance_metadata
 
 FILLVALUE = 1e20
 # compression settings to use
@@ -205,10 +205,7 @@ for year1 in years:
         )
 
         # Add some info about how the file was generated
-        this_file = os.path.normpath(__file__)
-        runcmd = f"python3 {os.path.basename(this_file)}"
-        ryf.attrs |= {"RYF_creation": get_provenance_metadata(this_file, runcmd)}
-        ryf.attrs |= {"RYF_input_files": get_provenance_input_files(input_files)}
+        ryf.attrs |= get_provenance_metadata(input_files)
 
         outfile = "RYF.{}.{}_{}.nc".format(var, year1, year2)
         print("Writing ", outfile)
