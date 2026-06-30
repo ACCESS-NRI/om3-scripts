@@ -89,11 +89,7 @@ def main():
     output_filename = os.path.abspath(args.output_filename)
 
     # Obtain metadata
-    this_file = sys.argv[0]
-    runcmd = f"{sys.executable} {' '.join(sys.argv)}"
-
-    input_files = [co2_cmip_filename, co2_noaa_filename, hgrid_filename]
-
+    input_files = [args.co2_cmip_filename, args.co2_noaa_filename, args.hgrid_filename]
     global_attrs = get_provenance_metadata(input_files)
 
     # Load the input data

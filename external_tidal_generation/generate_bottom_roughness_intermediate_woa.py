@@ -838,24 +838,14 @@ def main():
         )
 
         # Add provenance metadata and MD5 hashes for input files.
-        this_file = os.path.normpath(__file__)
-        runcmd = (
-            f"mpirun -n $PBS_NCPUS python3 {os.path.basename(this_file)} "
-            f"--woa_temp_file={args.woa_temp_file} "
-            f"--woa_salt_file={args.woa_salt_file} "
-            f"--synbath_file={args.synbath_file} "
-            f"--chunk-lat={args.chunk_lat} "
-            f"--chunk-lon={args.chunk_lon} "
-            f"--nradial={args.nradial} "
-            f"--ntheta={args.ntheta} "
-            f"--earth-radius={args.earth_radius} "
-            f"--omega={args.omega} "
-            f"--print-every={args.print_every} "
-            f"--woa-intermediate-file={args.woa_intermediate_file} "
-        )
-
-        input_files = [args.woa_temp_file, args.woa_salt_file, args.synbath_file]
-        global_attrs = get_provenance_metadata(input_files)
+        runcmd = f"mpirun -n $PBS_NCPUS python3 {' '.join(sys.argv)} "
+        input_files = [
+            args.woa_temp_file,
+            args.woa_salt_file,
+            args.synbath_file,
+            args.woa_intermediate_file,
+        ]
+        global_attrs = get_provenance_metadata(input_files, runcmd)
 
         ds_woa_output.attrs.update(global_attrs)
 

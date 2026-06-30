@@ -103,8 +103,9 @@ def get_provenance_metadata(input_files=None, runcmd=None):
     file is not pushed to the git upstream repository.
 
     arguments:
-        file: the path to the file being run
-        runcmd: the command used to run the file (with any arguments)
+        input_files: list of input files being used in the script being run (optional)
+        runcmd: the command used to run the file, with any arguments. Optional -
+            defaults to the python executable + input arguments
     """
 
     file = sys.argv[0]  # script being run
