@@ -108,7 +108,7 @@ def get_provenance_metadata(input_files=None, runcmd=None):
             defaults to the python executable + input arguments
     """
 
-    file = sys.argv[0]  # script being run
+    file = os.path.abspath(sys.argv[0])  # script being run
     if runcmd is None:
         runcmd = f"{sys.executable} {' '.join(sys.argv)}"
 
@@ -133,7 +133,7 @@ def get_provenance_metadata(input_files=None, runcmd=None):
         warn(
             f"{file} not under git version control! Add your file to a repository before generating any production output."
         )
-        prepend += f"{os.path.abspath(file)} (md5 hash: {md5sum(file)}): "
+        prepend += f"{file} (md5 hash: {md5sum(file)}): "
 
     attrs = {"history": prepend + runcmd}
 
