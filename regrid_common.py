@@ -15,7 +15,7 @@ from scipy import ndimage
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
-from scripts_common import get_provenance_metadata
+from scripts_common import get_provenance_input_files
 
 
 def _guess_longitude_name(ds):

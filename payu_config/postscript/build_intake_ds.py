@@ -19,7 +19,7 @@ from ruamel.yaml.comments import CommentedMap
 path_root = Path(__file__).parents[2]
 sys.path.append(str(path_root))
 
-from scripts_common import get_provenance_metadata, md5sum
+from scripts_common import get_provenance_metadata
 
 METADATA_FILENAME = "metadata.yaml"
 UUID_FIELD = "experiment_uuid"

@@ -92,7 +92,7 @@ def generate_vertical_grid(H, dzd, min_dz, depfac, output_filename):
     ]  # Trim the spacing values to match the adjusted depth levels
 
     # Write to NetCDF file
-    write_netcdf_file(output_filename, real_prop_z, this_file)
+    write_netcdf_file(output_filename, real_prop_z)
 
     print(
         f"SUCCESS! A vertical grid with {len(real_prop_z) - 1} levels has been generated. "
@@ -101,7 +101,7 @@ def generate_vertical_grid(H, dzd, min_dz, depfac, output_filename):
     )
 
 
-def write_netcdf_file(output_filename, real_prop_z, this_file):
+def write_netcdf_file(output_filename, real_prop_z):
     """Function to write vertical grid data to a NetCDF file."""
     # Convert to float32 (single precision) to ensure values are exactly representable in single precision,
     # then convert back to float64 (double precision) for storage in NetCDF.
