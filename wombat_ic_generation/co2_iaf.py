@@ -86,10 +86,13 @@ def main():
 
     args = parser.parse_args()
 
+    co2_cmip_filename = os.path.abspath(args.co2_cmip_filename)
+    co2_noaa_filename = os.path.abspath(args.co2_noaa_filename)
+    hgrid_filename = os.path.abspath(args.hgrid_filename)
     output_filename = os.path.abspath(args.output_filename)
 
     # Obtain metadata
-    input_files = [args.co2_cmip_filename, args.co2_noaa_filename, args.hgrid_filename]
+    input_files = [co2_cmip_filename, co2_noaa_filename, hgrid_filename]
     global_attrs = get_provenance_metadata(input_files)
 
     # Load the input data
