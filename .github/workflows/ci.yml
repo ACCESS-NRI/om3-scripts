@@ -39,7 +39,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
         activate-environment: om3-scripts-test
         environment-file: test/test_env.yaml
-        auto-activate: false
+        auto-activate: "false"
     # - name: Set up Python ${{ matrix.python-version }}
     #   uses: actions/setup-python@v3
     #   with:
