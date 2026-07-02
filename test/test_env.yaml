@@ -1,0 +1,19 @@
+name: om3-scripts-test
+channels:
+  - conda-forge
+  - accessnri
+  - defaults
+dependencies:
+  - esmpy
+  - pip
+  - pip:
+    - ocean_model_grid_generator@git+https://github.com/ACCESS-NRI/ocean_model_grid_generator@d17ee7af8d5690153dc54d9c55077de5e21b2211
+    - numpy<2
+    - pytest
+    - xarray
+    - pandas
+    - netCDF4<1.7
+    - dask
+    - access-nri-intake
+    - setuptools
+    - ruamel.yaml
