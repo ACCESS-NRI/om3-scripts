@@ -19,10 +19,12 @@ from mesh_generation.generate_rof_weights import drof_remapping_weights
 # going higher resolution than 0.1 has too much computational cost
 _test_resolutions = [4]  # , 0.1]
 
+
 # so that our fixtures are only created once in this pytest module, we need this special version of 'tmp_path'
 @pytest.fixture(scope="module")
 def grid_path(tmp_path_factory: pytest.TempdirFactory) -> Path:
     return tmp_path_factory.mktemp("temp")
+
 
 # ----------------
 # test data:
@@ -56,14 +58,15 @@ class MomGridFixture:
         ) > 5e9
         self.mask_ds.to_netcdf(self.mask_path)
 
-        self.ny = int(len(self.ds.ny)/2)
-        self.nx = int(len(self.ds.nx)/2)
+        self.ny = int(len(self.ds.ny) / 2)
+        self.nx = int(len(self.ds.nx) / 2)
 
 
 # pytest doesn't support class fixtures, so we need these constructor
 @pytest.fixture(scope="module", params=_test_resolutions)
 def mom_grid(request, grid_path):
     return MomGridFixture(request.param, grid_path)
+
 
 def mesh_creator(filename):
     """
@@ -79,7 +82,8 @@ def mesh_creator(filename):
     fld.get_area()
     area = copy(fld.data)
 
-    return {'fld':fld,'area': area}
+    return {"fld": fld, "area": area}
+
 
 @pytest.fixture()
 def mesh_in(mom_grid, tmp_path):
@@ -93,9 +97,10 @@ def mesh_in(mom_grid, tmp_path):
     test_mesh.write(mesh_filename_in)
 
     result = mesh_creator(mesh_filename_in)
-    result['mom_super_grid'] = test_mesh
+    result["mom_super_grid"] = test_mesh
 
     return result
+
 
 @pytest.fixture()
 def mesh_out(mom_grid, tmp_path):
@@ -115,9 +120,10 @@ def mesh_out(mom_grid, tmp_path):
     test_mesh.write(mesh_filename_out)
 
     result = mesh_creator(mesh_filename_out)
-    result['mom_super_grid'] = test_mesh
+    result["mom_super_grid"] = test_mesh
 
     return result
+
 
 @pytest.fixture
 def weights_file(mesh_out, mom_grid, tmp_path):
@@ -134,41 +140,47 @@ def weights_file(mesh_out, mom_grid, tmp_path):
 
     return str(tmp_path) + "/drof_remap_weights.nc"
 
+
 # ----------------
 # the actual tests:
+
 
 def test_generate_mask(mesh_out, mom_grid):
     """
     This test just convinces us the patch mom6_mask_detection in mesh_out works
     """
 
-    assert np.all(mesh_out['mom_super_grid'].mask == mom_grid.mask_ds.mask.values.flatten())
-
-    assert (
-        len(mesh_out['mom_super_grid'].mesh.elementCount.values)
-        == (mom_grid.ny * mom_grid.nx)
+    assert np.all(
+        mesh_out["mom_super_grid"].mask == mom_grid.mask_ds.mask.values.flatten()
     )
 
-@pytest.mark.parametrize("data", ['All', 'None', 'Ocean', 'Land'])
+    assert len(mesh_out["mom_super_grid"].mesh.elementCount.values) == (
+        mom_grid.ny * mom_grid.nx
+    )
+
+
+@pytest.mark.parametrize("data", ["All", "None", "Ocean", "Land"])
 def test_regrid_conservation(data, mesh_in, mesh_out, weights_file, tmp_path):
     """
     For some provided meshes, and weights file, confirm that the weights are conservative
     """
 
-    fld_in = mesh_in['fld']
-    area_in = mesh_in['area']
-    fld_out = mesh_out['fld']
-    area_out = mesh_out['area']
+    fld_in = mesh_in["fld"]
+    area_in = mesh_in["area"]
+    fld_out = mesh_out["fld"]
+    area_out = mesh_out["area"]
 
     match data:
-        case 'All':
+        case "All":
             fld_in.data[:] = 1e10
-        case 'None':
+        case "None":
             fld_in.data[:] = 0
-        case 'Ocean':
-            fld_in.data[:] = mesh_out['mom_super_grid'].mesh.elementMask*1e20
-        case 'Land':
-            fld_in.data[:] = 1e-20*(mesh_out['mom_super_grid'].mesh.elementMask==0).astype(int)
+        case "Ocean":
+            fld_in.data[:] = mesh_out["mom_super_grid"].mesh.elementMask * 1e20
+        case "Land":
+            fld_in.data[:] = 1e-20 * (
+                mesh_out["mom_super_grid"].mesh.elementMask == 0
+            ).astype(int)
 
     # for unclear reasons, we need to zero the output field before populating it
     # it looks like cells which are not destinations in remapping can introduce rounding error
