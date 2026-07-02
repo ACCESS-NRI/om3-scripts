@@ -37,7 +37,7 @@ jobs:
       with:
         miniconda-version: "latest"
         python-version: ${{ matrix.python-version }}
-        environment-file: test/test_env.yml
+        environment-file: test/test_env.yaml
         activate-environment: om3-scripts-test
         auto-activate-base: false
     # - name: Set up Python ${{ matrix.python-version }}
