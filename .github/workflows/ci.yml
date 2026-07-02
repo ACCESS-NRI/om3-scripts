@@ -33,12 +33,12 @@ jobs:
     - run: pwd
     - run: ls -R
     - name: Setup conda environment
-      uses: conda-incubator/setup-miniconda@v3
+      uses: conda-incubator/setup-miniconda@v7
       with:
         miniconda-version: "latest"
         python-version: ${{ matrix.python-version }}
-        environment-file: test/test_env.yaml
         activate-environment: om3-scripts-test
+        environment-file: test/test_env.yaml
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v3
       with:
