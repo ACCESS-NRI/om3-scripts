@@ -58,7 +58,6 @@ jobs:
     #     python -m pip install --upgrade pip
     #     pip install -r test/test_requirements.txt
     - name: List installed packages
-      shell: bash -l 
       run: |
         conda env activate test
         conda env list
