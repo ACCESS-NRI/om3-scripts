@@ -55,6 +55,7 @@ jobs:
     #     pip install -r test/test_requirements.txt
     - name: List installed packages
       run: |
+        conda env activate test
         conda env list
         conda list
     - run: which python
