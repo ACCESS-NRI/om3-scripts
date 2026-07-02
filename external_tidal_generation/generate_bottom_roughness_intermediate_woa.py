@@ -843,7 +843,6 @@ def main():
             args.woa_temp_file,
             args.woa_salt_file,
             args.synbath_file,
-            args.woa_intermediate_file,
         ]
         global_attrs = get_provenance_metadata(input_files, runcmd)
 

@@ -6,6 +6,7 @@
 #PBS -l walltime=10:00:00
 #PBS -l mem=500GB
 #PBS -l ncpus=72
+#PBS -l wd
 ##PBS -j oe
 
 # Bottom roughness generation (h^2) on Gadi
@@ -67,8 +68,8 @@ LOG_INTERMEDIATE="${PATH_TO_SAVE}/log_bottom_roughness_intermediate_${RESOLUTION
 LOG_REGRID="${PATH_TO_SAVE}/log_bottom_roughness_regrid_${RESOLUTION}.log"
 
 # script paths
-INTERMEDIATE_SCRIPT="/g/data/vk83/apps/om3-scripts/external_tidal_generation/generate_bottom_roughness_intermediate_woa.py"
-REGRID_SCRIPT="/g/data/vk83/apps/om3-scripts/external_tidal_generation/generate_bottom_roughness_regrid.py"
+INTERMEDIATE_SCRIPT="/g/data/tm70/as2285/making_inputs/make_om3_topo/om3-scripts/external_tidal_generation/generate_bottom_roughness_intermediate_woa.py"
+REGRID_SCRIPT="/g/data/tm70/as2285/making_inputs/make_om3_topo/om3-scripts/external_tidal_generation/generate_bottom_roughness_regrid.py"
 
 # Input paths - shared across resolutions
 # Loads woa23 0.25deg annual mean climatology
