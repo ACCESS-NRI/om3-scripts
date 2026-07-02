@@ -38,7 +38,7 @@ import sys
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
-from scripts_common import get_provenance_metadata, md5sum
+from scripts_common import get_provenance_metadata
 
 # Define a small constant to initialize the iteration and prevent numerical issues
 epsilon = 0.001
@@ -91,18 +91,8 @@ def generate_vertical_grid(H, dzd, min_dz, depfac, output_filename):
         : len(real_prop_z)
     ]  # Trim the spacing values to match the adjusted depth levels
 
-    this_file = os.path.normpath(__file__)
-
-    # Add some info about how the file was generated
-    runcmd = (
-        f"python3 {os.path.basename(this_file)} --H={H} --depfac={depfac} "
-        f"--dzd={dzd} "
-        f"--min_dz={min_dz} "
-        f"--output={output_filename} "
-    )
-
     # Write to NetCDF file
-    write_netcdf_file(output_filename, real_prop_z, this_file, runcmd)
+    write_netcdf_file(output_filename, real_prop_z)
 
     print(
         f"SUCCESS! A vertical grid with {len(real_prop_z) - 1} levels has been generated. "
@@ -111,7 +101,7 @@ def generate_vertical_grid(H, dzd, min_dz, depfac, output_filename):
     )
 
 
-def write_netcdf_file(output_filename, real_prop_z, this_file, runcmd):
+def write_netcdf_file(output_filename, real_prop_z):
     """Function to write vertical grid data to a NetCDF file."""
     # Convert to float32 (single precision) to ensure values are exactly representable in single precision,
     # then convert back to float64 (double precision) for storage in NetCDF.
@@ -125,7 +115,7 @@ def write_netcdf_file(output_filename, real_prop_z, this_file, runcmd):
     zeta.standard_name = "depth"
     zeta.long_name = "vertical grid depth at top and bottom of each cell"
     eddyfile.variables["zeta"][:] = real_prop_z_float64
-    eddyfile.setncatts({"history": get_provenance_metadata(this_file, runcmd)})
+    eddyfile.setncatts(get_provenance_metadata())  # Obtain metadata
     eddyfile.close()
 
 

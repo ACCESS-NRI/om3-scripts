@@ -38,7 +38,7 @@ import sys
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
-from scripts_common import get_provenance_metadata, md5sum
+from scripts_common import get_provenance_metadata
 
 FILLVALUE = 1e20
 # compression settings to use
@@ -113,7 +113,7 @@ for year1 in years:
     ds = {}
 
     for var in variables:
-        ryf_files = str()
+        input_files = []
         print(var)
         for y in (year1, year2):
             if source_data == "jra55v1p4" or source_data == "jra55v1p6":
@@ -147,7 +147,7 @@ for year1 in years:
             print("Loading {} for {}".format(files[0], y))
             ds[y] = xarray.open_dataset(files[0], decode_coords=False)
             # save info for metadata
-            ryf_files += f"{files[0]} (md5 hash: {md5sum(files[0])}, )"
+            input_files.append(files[0])
         # Make a copy of the second year without time_bnds
         ryf = ds[baseyear].drop_vars("time_bnds")
         ryf.encoding = ds[baseyear].encoding
@@ -205,10 +205,7 @@ for year1 in years:
         )
 
         # Add some info about how the file was generated
-        this_file = os.path.normpath(__file__)
-        runcmd = f"python3 {os.path.basename(this_file)}"
-        ryf.attrs |= {"RYF_creation": get_provenance_metadata(this_file, runcmd)}
-        ryf.attrs |= {"RYF_inputFiles": ryf_files}
+        ryf.attrs |= get_provenance_metadata(input_files)
 
         outfile = "RYF.{}.{}_{}.nc".format(var, year1, year2)
         print("Writing ", outfile)

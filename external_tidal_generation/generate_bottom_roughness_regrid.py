@@ -53,7 +53,7 @@ import scipy.sparse.linalg as spla
 
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
-from scripts_common import get_provenance_metadata, md5sum
+from scripts_common import get_provenance_metadata
 from mesh_generation.generate_mesh import mom6_mask_detection
 
 
@@ -396,26 +396,8 @@ def main():
     print("Regridding done!")
 
     # Add provenance metadata and MD5 hashes for input files.
-    this_file = os.path.normpath(__file__)
-    runcmd = (
-        f"python3 {os.path.basename(this_file)} "
-        f"--topog_file={args.topog_file} "
-        f"--hgrid_file={args.hgrid_file} "
-        f"--woa_intermediate_file={args.woa_intermediate_file} "
-        f"--output_file={args.output_file} "
-        f"--method={args.method} "
-        f"--periodic_regrid={args.periodic_regrid} "
-        f"--periodic_lon_laplace={args.periodic_lon_laplace}"
-    )
-
-    history = get_provenance_metadata(this_file, runcmd)
-    global_attrs = {"history": history}
-    file_hashes = [
-        f"{args.hgrid_file} (md5 hash: {md5sum(args.hgrid_file)})",
-        f"{args.topog_file} (md5 hash: {md5sum(args.topog_file)})",
-        f"{args.woa_intermediate_file} (md5 hash: {md5sum(args.woa_intermediate_file)})",
-    ]
-    global_attrs["inputFile"] = ", ".join(file_hashes)
+    input_files = [args.hgrid_file, args.topog_file, args.woa_intermediate_file]
+    global_attrs = get_provenance_metadata(input_files)
     regrid_depth_var.attrs.update(global_attrs)
 
     output_path = Path(args.output_file)

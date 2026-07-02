@@ -40,7 +40,7 @@ path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
 from regrid_common import Regrid_Common
-from scripts_common import get_provenance_metadata, md5sum
+from scripts_common import get_provenance_metadata
 from mesh_generation.generate_mesh import mom6_mask_detection
 
 # in a climatology, with 365 day calendar, whats the day of the middle of each month
@@ -179,31 +179,20 @@ def main():
         "units": "days since 0001-01-01 00:00:00",
     }
 
-    # Add some info about how the file was generated
-    this_file = os.path.normpath(__file__)
-
-    runcmd = (
-        f"python3 {os.path.basename(this_file)} --topog-file={regrid.args.topog_file} "
-        f"{regrid.runcmd_args}"
-    )
-
     # Info about input data used
-    file_hashes = [
-        f"{AQ_MELT_PATTERN} (md5 hash: {md5sum(AQ_MELT_PATTERN)})",
-        f"{GL_MELT_PATTERN} (md5 hash: {md5sum(GL_MELT_PATTERN)})",
-        f"{regrid.hgrid_filename} (md5 hash: {md5sum(regrid.hgrid_filename)})",
-        f"{regrid.args.topog_file} (md5 hash: {md5sum(regrid.args.topog_file)})",
+    input_files = [
+        AQ_MELT_PATTERN,
+        GL_MELT_PATTERN,
+        regrid.hgrid_filename,
+        regrid.args.topog_file,
     ]
     if regrid.mask_filename:
-        file_hashes.append(
-            f"{regrid.mask_filename} (md5 hash: {md5sum(regrid.mask_filename)})"
-        )
+        input_files.append(regrid.mask_filename)
 
     global_attrs |= {
         "description": "Mankoff 2025 iceberg spreading climatology remapped onto an ACCESS-OM3 grid",
-        "history": get_provenance_metadata(this_file, runcmd),
-        "inputFile": ", ".join(file_hashes),
     }
+    global_attrs |= get_provenance_metadata(input_files)
 
     weights_ds.attrs = weights_ds.attrs | global_attrs
 
