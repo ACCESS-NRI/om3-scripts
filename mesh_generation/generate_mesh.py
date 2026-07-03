@@ -43,7 +43,7 @@ import warnings
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
-from scripts_common import get_provenance_metadata, md5sum
+from scripts_common import get_provenance_metadata
 
 EARTH_R = 6.37122e6
 
@@ -125,7 +125,7 @@ class BaseGrid:
 
         self.mesh = None
 
-    def create_mesh(self, wrap_lons=True, global_attrs=None):
+    def create_mesh(self, wrap_lons=True):
         """
         Create the mesh as an xarray Dataset
 
@@ -133,8 +133,6 @@ class BaseGrid:
         ----------
         wrap_lons: boolean, optional
             If True, wrap longitude values into the range between 0 and 360
-        global_attrs: dict
-            Global attributes to the mesh object
         """
 
         if wrap_lons:
@@ -204,15 +202,7 @@ class BaseGrid:
             "timeGenerated": f"{datetime.now()}",
             "created_by": f"{os.environ.get('USER')}",
         }
-        if self.inputs:
-            file_hashes = []
-            for input in self.inputs:
-                file_hashes.append(f"{input} (md5 hash: {md5sum(input)})")
-            ds.attrs["inputFile"] = ", ".join(file_hashes)
-
-        # add git info to history
-        if global_attrs:
-            ds.attrs |= global_attrs
+        ds.attrs |= get_provenance_metadata(input_files=self.inputs)
 
         self.mesh = ds
 
@@ -588,29 +578,6 @@ def main():
     if topog_filename:
         topog_filename = os.path.abspath(topog_filename)
 
-    this_file = os.path.normpath(__file__)
-
-    # Add some info about how the file was generated
-    runcmd = (
-        f"python3 {os.path.basename(this_file)} --grid-type={grid_type} --grid-filename={grid_filename} "
-        f"--mesh-filename={mesh_filename}"
-    )
-    if topog_filename:
-        runcmd += f" --topog-filename={topog_filename}"
-        if minimum_depth:
-            runcmd += f" --minimum-depth={minimum_depth}"
-        if masking_depth:
-            runcmd += f" --masking-depth={masking_depth}"
-    runcmd += f" --wrap-lons={wrap_lons}"
-    if lon_name:
-        runcmd += f" --lon-name={lon_name}"
-    if lat_name:
-        runcmd += f" --lat-name={lat_name}"
-    if area_name:
-        runcmd += f" --area-name={area_name}"
-
-    global_attrs = {"history": get_provenance_metadata(this_file, runcmd)}
-
     mesh = gridtype_dispatch[grid_type](
         grid_filename,
         topog_filename,
@@ -621,9 +588,7 @@ def main():
         masking_depth,
     )
 
-    mesh.create_mesh(wrap_lons=wrap_lons, global_attrs=global_attrs).write(
-        mesh_filename
-    )
+    mesh.create_mesh(wrap_lons=wrap_lons).write(mesh_filename)
 
 
 if __name__ == "__main__":

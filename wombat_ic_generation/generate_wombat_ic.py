@@ -75,7 +75,7 @@ def _open_woa_data(file, var, global_attrs, hcoord_int=None, vcoord_int=None):
         "WOA23 (https://www.ncei.noaa.gov/access/world-ocean-atlas-2023/)"
     )
 
-    global_attrs["inputFile"].add(f"{file} (md5 hash: {md5sum(file)})")
+    global_attrs["inputFile"].add(f"{os.path.abspath(file)} (md5 hash: {md5sum(file)})")
 
     return _standardise_coords(da, hcoord_int, vcoord_int)
 
@@ -96,7 +96,7 @@ def _open_glodap_data(file, var, global_attrs, hcoord_int=None, vcoord_int=None)
         "GLODAPv2 mapped data (https://glodap.info/index.php/mapped-data-product/)"
     )
 
-    global_attrs["inputFile"].add(f"{file} (md5 hash: {md5sum(file)})")
+    global_attrs["inputFile"].add(f"{os.path.abspath(file)} (md5 hash: {md5sum(file)})")
 
     return _standardise_coords(da, hcoord_int, vcoord_int)
 
@@ -113,7 +113,7 @@ def _open_huang_data(file, global_attrs, hcoord_int=None, vcoord_int=None):
         "Huang et al 2022 dFe data (https://zenodo.org/records/6994318)"
     )
 
-    global_attrs["inputFile"].add(f"{file} (md5 hash: {md5sum(file)})")
+    global_attrs["inputFile"].add(f"{os.path.abspath(file)} (md5 hash: {md5sum(file)})")
 
     # Extend Latitudes from -90-90
     new_lats = np.concatenate(
@@ -457,18 +457,11 @@ def main():
     wombat_version = args.wombat_version
     output_file = args.output_file
 
-    this_file = os.path.normpath(__file__)
-
-    # Add some info about how the file was generated
-    runcmd = (
-        f"python3 {this_file} --wombat-version={wombat_version} "
-        f"--output-file={os.path.abspath(output_file)}"
-    )
-
     global_attrs = {
-        "history": get_provenance_metadata(this_file, runcmd),
         "inputFile": set(),
     }
+    # Obtain metadata
+    global_attrs |= get_provenance_metadata()
 
     xr.set_options(keep_attrs=True)
     template = _open_woa_data(

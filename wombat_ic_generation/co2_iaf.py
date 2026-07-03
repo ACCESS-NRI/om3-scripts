@@ -38,7 +38,7 @@ import pandas as pd
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
-from scripts_common import get_provenance_metadata, md5sum
+from scripts_common import get_provenance_metadata
 
 xr.set_options(keep_attrs=True)
 
@@ -91,25 +91,9 @@ def main():
     hgrid_filename = os.path.abspath(args.hgrid_filename)
     output_filename = os.path.abspath(args.output_filename)
 
-    this_file = os.path.normpath(__file__)
-
-    # provenance metadata
-    runcmd = (
-        f"python3 {os.path.basename(this_file)} --co2-cmip-filename={co2_cmip_filename} "
-        f"--co2-noaa-filename={co2_noaa_filename} --hgrid-filename={hgrid_filename} "
-        f"--output-filename={output_filename}"
-    )
-
-    file_hashes = [
-        f"{co2_cmip_filename} (md5 hash: {md5sum(co2_cmip_filename)})",
-        f"{co2_noaa_filename} (md5 hash: {md5sum(co2_noaa_filename)})",
-        f"{hgrid_filename} (md5 hash: {md5sum(hgrid_filename)})",
-    ]
-
-    global_attrs = {
-        "history": get_provenance_metadata(this_file, runcmd),
-        "inputFile": ", ".join(file_hashes),
-    }
+    # Obtain metadata
+    input_files = [co2_cmip_filename, co2_noaa_filename, hgrid_filename]
+    global_attrs = get_provenance_metadata(input_files)
 
     # Load the input data
     co2_cmip = xr.open_dataset(co2_cmip_filename, decode_cf=False).compute()

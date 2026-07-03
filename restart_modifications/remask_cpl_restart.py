@@ -157,21 +157,12 @@ def main():
         unmask_file(f, mask, missing_value, skip_vars=skip_vars)
         apply_mask_file(f, mask, skip_vars=skip_vars)
 
-        this_file = os.path.normpath(__file__)
-        runcmd = (
-            f"python3 {os.path.basename(this_file)} "
-            f"--input_file {args.input_file} "
-            f"--output_file {args.output_file} "
-            f"--mask_file {args.mask_file} "
-            f"--mask_var {args.mask_var}"
-        )
-
         # Add metadata
         f.setncattr(
             "title",
             "Coupler restart fields updated with land mask of modified bathymetry",
         )
-        f.setncattr("history", get_provenance_metadata(this_file, runcmd))
+        f.setncatts(get_provenance_metadata())
         f.setncattr(
             "mask_file",
             f"{os.path.abspath(args.mask_file)} (md5 hash: {md5sum(args.mask_file)})",

@@ -29,7 +29,7 @@ import sys
 
 path_root = Path(__file__).parents[2]
 sys.path.append(str(path_root))
-from scripts_common import get_provenance_metadata, md5sum
+from scripts_common import get_provenance_metadata
 
 CICE_DAILY_FN = "access-om3.cice.1day.mean.????-??-??.nc"
 MONTHLY_STUB_FN = "access-om3.cice.1day.mean."
@@ -134,9 +134,7 @@ class Concat_Ice_Daily:
         del daily_ds.attrs["comment3"]
 
         # Add some info about how the file was generated
-        this_file = os.path.normpath(__file__)
-        runcmd = f"python3 {os.path.basename(this_file)} --directory={os.path.abspath(directory)}"
-        daily_ds.attrs["postprocessing"] = get_provenance_metadata(this_file, runcmd)
+        daily_ds.attrs |= get_provenance_metadata()
 
         self.directory = directory
         self.daily_ds = daily_ds
