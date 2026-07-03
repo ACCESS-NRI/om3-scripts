@@ -128,7 +128,7 @@ def main():
         required=True,
         help="Path to the model topography file, which is used to generate the model mask.",
     )
-    parser.add_argument(
+    regrid_aq.parser.add_argument(
         "--minimum-depth",
         type=float,
         default=0,
@@ -138,7 +138,7 @@ def main():
             "unless --masking-depth is also supplied."
         ),
     )
-    parser.add_argument(
+    regrid_aq.parser.add_argument(
         "--masking-depth",
         type=float,
         default=None,
@@ -184,7 +184,9 @@ def main():
     # find the ocean mask using the bathymetry
     topo = xr.open_dataset(regrid.args.topog_file)
     mask = mom6_mask_detection(
-        topo, minimum_depth=args.minimum_depth, masking_depth=args.masking_depth
+        topo,
+        minimum_depth=regrid.args.minimum_depth,
+        masking_depth=regrid.args.masking_depth,
     )
 
     # After doing the regridding, map any runoff on land cells into the ocean
