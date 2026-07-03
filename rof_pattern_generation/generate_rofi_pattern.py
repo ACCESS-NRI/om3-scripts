@@ -128,6 +128,27 @@ def main():
         required=True,
         help="Path to the model topography file, which is used to generate the model mask.",
     )
+    regrid_aq.parser.add_argument(
+        "--minimum-depth",
+        type=float,
+        default=0,
+        help=(
+            "MINIMUM_DEPTH in metres. When a topography file is "
+            "provided, any grid cell with depth <= MINIMUM_DEPTH is treated as land "
+            "unless --masking-depth is also supplied."
+        ),
+    )
+    regrid_aq.parser.add_argument(
+        "--masking-depth",
+        type=float,
+        default=None,
+        help=(
+            "MASKING_DEPTH in metres. If set, cells with depth <= MASKING_DEPTH "
+            "become land, while cells with MASKING_DEPTH < depth < MINIMUM_DEPTH remain wet "
+            "but their depth will be raised to MINIMUM_DEPTH at runtime.  "
+            "If omitted, MINIMUM_DEPTH alone controls the land-sea mask."
+        ),
+    )
 
     regrid_aq.parse_cli()
 
@@ -162,7 +183,11 @@ def main():
 
     # find the ocean mask using the bathymetry
     topo = xr.open_dataset(regrid.args.topog_file)
-    mask = mom6_mask_detection(topo)
+    mask = mom6_mask_detection(
+        topo,
+        minimum_depth=regrid.args.minimum_depth,
+        masking_depth=regrid.args.masking_depth,
+    )
 
     # After doing the regridding, map any runoff on land cells into the ocean
     weights_da = move_runoff_on_land(
