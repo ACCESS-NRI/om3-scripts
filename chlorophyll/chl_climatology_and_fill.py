@@ -70,18 +70,6 @@ def main():
     input_directory = os.path.abspath(args.input_directory)
     output_filename = os.path.abspath(args.output_filename)
 
-    this_file = os.path.normpath(__file__)
-
-    # Add some info about how the file was generated
-    runcmd = (
-        f"python3 {os.path.basename(this_file)} --input-directory={input_directory} "
-        f"--output-filename={output_filename}"
-    )
-
-    history_attrs = {
-        "history": get_provenance_metadata(this_file, runcmd),
-    }
-
     # Load the input data and compute the monthly climatology
     input_files = sorted(glob.glob(f"{input_directory}/*.nc"))
 
@@ -160,7 +148,7 @@ def main():
     chl.time.attrs["long_name"] = "Time"
     chl.time.attrs["standard_name"] = "time"
     chl.time.attrs["axis"] = "T"
-    chl.attrs |= history_attrs
+    chl.attrs |= get_provenance_metadata(input_files)
     comp = dict(zlib=True, complevel=4)
     encoding = {var: comp for var in chl.data_vars}
     # Time coords should be double type according for CF conventions
