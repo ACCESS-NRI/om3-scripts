@@ -10,7 +10,8 @@
 # Output:  {output_dir}/{stream}/{stream}_era5_oper_sfc_{YYYYMMDD}-{YYYYMMDD}.nc
 #
 # Rechunks [93, 91, 180] -> [1, 721, 1440] using netCDF4 streaming copies.
-# Raw int16 packed values are preserved by disabling netCDF4 auto mask/scale.
+# Monthly values are decoded with their source packing and repacked to one
+# year-wide int16 scale_factor and add_offset.
 #
 # To process a single stream and year:
 #   python3 make_era5_yearly_rechunked.py --stream csf --year 1979
@@ -48,6 +49,7 @@ import subprocess
 import sys
 import time
 import traceback
+import zlib
 from pathlib import Path
 
 import netCDF4 as nc
@@ -85,15 +87,6 @@ YEAR_FIRST, YEAR_LAST = 1940, 2026
 COMPLEVEL = 5
 CHUNK_T, CHUNK_LAT, CHUNK_LON = 1, 721, 1440
 COPY_TIME_BLOCK = 93
-PRESERVED_VAR_ATTRS = (
-    "scale_factor",
-    "add_offset",
-    "missing_value",
-    "units",
-    "long_name",
-    "standard_name",
-)
-
 
 # -- validation ----------------------------------------------------------------
 
@@ -123,6 +116,109 @@ def _require_matching_attr(src_obj, dst_obj, attr, label):
         raise RuntimeError(f"{label}: attribute {attr!r} presence differs")
     if src_has and not _attrs_equal(src_obj.getncattr(attr), dst_obj.getncattr(attr)):
         raise RuntimeError(f"{label}: attribute {attr!r} differs")
+
+
+def _require_matching_attrs(src_obj, dst_obj, label, exclude=()):
+    excluded = set(exclude)
+    src_attrs = set(src_obj.ncattrs()) - excluded
+    dst_attrs = set(dst_obj.ncattrs()) - excluded
+    if src_attrs != dst_attrs:
+        raise RuntimeError(
+            f"{label}: attribute names differ: {sorted(src_attrs)} != {sorted(dst_attrs)}"
+        )
+    for attr in src_attrs:
+        _require_matching_attr(src_obj, dst_obj, attr, label)
+
+
+def _scalar_attr(var, attr):
+    if attr not in var.ncattrs():
+        raise RuntimeError(f"{var.name}: missing attribute {attr!r}")
+    value = np.asarray(var.getncattr(attr))
+    if value.size != 1:
+        raise RuntimeError(f"{var.name}: attribute {attr!r} must be scalar")
+    result = float(value.reshape(-1)[0])
+    if not np.isfinite(result):
+        raise RuntimeError(f"{var.name}: attribute {attr!r} is not finite")
+    return result
+
+
+def _packing(var):
+    scale_factor = _scalar_attr(var, "scale_factor")
+    add_offset = _scalar_attr(var, "add_offset")
+    if scale_factor == 0:
+        raise RuntimeError(f"{var.name}: scale_factor must be non-zero")
+    return scale_factor, add_offset
+
+
+def _missing_codes(var):
+    codes = set()
+    for attr in ("_FillValue", "missing_value"):
+        if attr not in var.ncattrs():
+            continue
+        for value in np.asarray(var.getncattr(attr)).reshape(-1):
+            numeric = int(value)
+            if numeric != value:
+                raise RuntimeError(f"{var.name}: {attr}={value!r} is not an integer")
+            codes.add(numeric)
+    return codes
+
+
+def _missing_mask(raw_values, var):
+    mask = np.zeros(raw_values.shape, dtype=bool)
+    for code in _missing_codes(var):
+        mask |= raw_values == code
+    return mask
+
+
+def _decode_raw(raw_values, var):
+    scale_factor, add_offset = _packing(var)
+    decoded = raw_values.astype(np.float64)
+    decoded *= scale_factor
+    decoded += add_offset
+    return decoded
+
+
+def _valid_code_extrema(var):
+    limits = np.iinfo(var.dtype)
+    reserved = _missing_codes(var)
+    code_min = int(limits.min)
+    while code_min in reserved and code_min <= limits.max:
+        code_min += 1
+    code_max = int(limits.max)
+    while code_max in reserved and code_max >= limits.min:
+        code_max -= 1
+    if code_max <= code_min:
+        raise RuntimeError(f"{var.name}: insufficient integer codes for packing")
+    return code_min, code_max
+
+
+def _largest_valid_code_range(var):
+    if not np.issubdtype(var.dtype, np.signedinteger):
+        raise RuntimeError(
+            f"{var.name}: expected a signed integer dtype, got {var.dtype}"
+        )
+
+    limits = np.iinfo(var.dtype)
+    reserved = sorted(
+        code for code in _missing_codes(var) if limits.min <= code <= limits.max
+    )
+    ranges = []
+    start = int(limits.min)
+    for code in reserved:
+        if start <= code - 1:
+            ranges.append((start, code - 1))
+        start = code + 1
+    if start <= limits.max:
+        ranges.append((start, int(limits.max)))
+    if not ranges:
+        raise RuntimeError(
+            f"{var.name}: no integer codes remain after reserving missing values"
+        )
+
+    code_min, code_max = max(ranges, key=lambda bounds: bounds[1] - bounds[0])
+    if code_max <= code_min:
+        raise RuntimeError(f"{var.name}: insufficient integer codes for packing")
+    return code_min, code_max
 
 
 def validate(
@@ -164,9 +260,16 @@ def validate(
         if not ds.dimensions["time"].isunlimited():
             raise RuntimeError("time dimension is not UNLIMITED")
 
-        for attr in ("scale_factor", "add_offset"):
-            if attr not in var.ncattrs():
-                raise RuntimeError(f"missing variable attribute {attr!r}")
+        _packing(var)
+        filters = var.filters()
+        if not filters.get("zlib"):
+            raise RuntimeError("main variable is not compressed with zlib")
+        if not filters.get("shuffle"):
+            raise RuntimeError("main variable does not use the shuffle filter")
+        if filters.get("complevel") != COMPLEVEL:
+            raise RuntimeError(
+                f"compression level={filters.get('complevel')}, expected {COMPLEVEL}"
+            )
 
         time_len = len(ds.dimensions["time"])
         if time_len == 0:
@@ -220,6 +323,125 @@ def _source_time_count(source_files):
     if total == 0:
         raise RuntimeError("source files contain zero time records")
     return total
+
+
+def _validate_source_schema(source_files, varname):
+    with nc.Dataset(str(source_files[0])) as template:
+        if varname not in template.variables:
+            raise RuntimeError(f"missing variable {varname!r} in {source_files[0]}")
+        template_var = template.variables[varname]
+        template_var.set_auto_maskandscale(False)
+        if str(template_var.dtype) != "int16":
+            raise RuntimeError(
+                f"{varname}: source dtype={template_var.dtype}, expected int16"
+            )
+        if template_var.dimensions != ("time", "latitude", "longitude"):
+            raise RuntimeError(
+                f"{varname}: unexpected dimensions {template_var.dimensions!r}"
+            )
+        if "_FillValue" not in template_var.ncattrs():
+            raise RuntimeError(f"{varname}: source has no _FillValue")
+        _packing(template_var)
+
+        for source_file in source_files:
+            with nc.Dataset(str(source_file)) as source:
+                if set(source.variables) != set(template.variables):
+                    raise RuntimeError(f"variable names differ in {source_file}")
+                source_var = source.variables[varname]
+                source_var.set_auto_maskandscale(False)
+                if source_var.dimensions != template_var.dimensions:
+                    raise RuntimeError(f"{varname}: dimensions differ in {source_file}")
+                if source_var.shape[1:] != template_var.shape[1:]:
+                    raise RuntimeError(
+                        f"{varname}: spatial shape differs in {source_file}"
+                    )
+                if str(source_var.dtype) != str(template_var.dtype):
+                    raise RuntimeError(f"{varname}: dtype differs in {source_file}")
+                _packing(source_var)
+
+                _require_matching_attrs(
+                    template_var,
+                    source_var,
+                    varname,
+                    exclude=("scale_factor", "add_offset"),
+                )
+
+                for coord in ("latitude", "longitude"):
+                    template_coord = template.variables[coord]
+                    source_coord = source.variables[coord]
+                    template_coord.set_auto_maskandscale(False)
+                    source_coord.set_auto_maskandscale(False)
+                    if template_coord.dimensions != source_coord.dimensions:
+                        raise RuntimeError(
+                            f"{coord}: dimensions differ in {source_file}"
+                        )
+                    if not np.array_equal(template_coord[:], source_coord[:]):
+                        raise RuntimeError(f"{coord}: values differ in {source_file}")
+                    if set(template_coord.ncattrs()) != set(source_coord.ncattrs()):
+                        raise RuntimeError(
+                            f"{coord}: attributes differ in {source_file}"
+                        )
+                    for attr in template_coord.ncattrs():
+                        _require_matching_attr(
+                            template_coord, source_coord, attr, coord
+                        )
+
+                template_time = template.variables["time"]
+                source_time = source.variables["time"]
+                if set(template_time.ncattrs()) != set(source_time.ncattrs()):
+                    raise RuntimeError(f"time: attributes differ in {source_file}")
+                for attr in template_time.ncattrs():
+                    _require_matching_attr(template_time, source_time, attr, "time")
+
+
+def _calculate_yearly_packing(source_files, varname):
+    # Monthly files use independent packing. Their metadata defines a safe
+    # physical range without requiring an extra full-data read.
+    with nc.Dataset(str(source_files[0])) as template:
+        template_var = template.variables[varname]
+        template_var.set_auto_maskandscale(False)
+        code_min, code_max = _largest_valid_code_range(template_var)
+        fill_value = int(template_var.getncattr("_FillValue"))
+
+    physical_min = None
+    physical_max = None
+    for source_file in source_files:
+        with nc.Dataset(str(source_file)) as source:
+            source_var = source.variables[varname]
+            source_var.set_auto_maskandscale(False)
+            scale_factor, add_offset = _packing(source_var)
+            source_code_min, source_code_max = _valid_code_extrema(source_var)
+            decoded_bounds = (
+                source_code_min * scale_factor + add_offset,
+                source_code_max * scale_factor + add_offset,
+            )
+            month_min = min(decoded_bounds)
+            month_max = max(decoded_bounds)
+            physical_min = (
+                month_min if physical_min is None else min(physical_min, month_min)
+            )
+            physical_max = (
+                month_max if physical_max is None else max(physical_max, month_max)
+            )
+
+    if physical_min is None or physical_max is None:
+        raise RuntimeError(f"{varname}: source contains no valid packing range")
+    if physical_min == physical_max:
+        scale_factor = 1.0
+        add_offset = physical_min
+    else:
+        scale_factor = (physical_max - physical_min) / (code_max - code_min)
+        add_offset = physical_min - code_min * scale_factor
+
+    return {
+        "scale_factor": scale_factor,
+        "add_offset": add_offset,
+        "code_min": code_min,
+        "code_max": code_max,
+        "fill_value": fill_value,
+        "physical_min": physical_min,
+        "physical_max": physical_max,
+    }
 
 
 def _time_stamp(source_file, time_index):
@@ -282,17 +504,14 @@ def _copy_attrs(src_obj, dst_obj, skip=()):
             dst_obj.setncattr(attr, src_obj.getncattr(attr))
 
 
-def _create_output_schema(out_ds, template_ds, varname):
+def _create_output_schema(out_ds, template_ds, varname, yearly_packing):
     for dim_name, dim in template_ds.dimensions.items():
         out_ds.createDimension(dim_name, None if dim_name == "time" else len(dim))
 
     for name, src_var in template_ds.variables.items():
-        fill_value = (
-            src_var.getncattr("_FillValue")
-            if "_FillValue" in src_var.ncattrs()
-            else None
-        )
-        kwargs = {"fill_value": fill_value}
+        kwargs = {}
+        if "_FillValue" in src_var.ncattrs():
+            kwargs["fill_value"] = src_var.getncattr("_FillValue")
         if name == varname:
             kwargs.update(
                 {
@@ -309,19 +528,70 @@ def _create_output_schema(out_ds, template_ds, varname):
             src_var.dimensions,
             **kwargs,
         )
-        _copy_attrs(src_var, dst_var, skip=("_FillValue",))
+        skip = (
+            ("_FillValue", "scale_factor", "add_offset")
+            if name == varname
+            else ("_FillValue",)
+        )
+        _copy_attrs(src_var, dst_var, skip=skip)
+        if name == varname:
+            dst_var.setncattr("scale_factor", yearly_packing["scale_factor"])
+            dst_var.setncattr("add_offset", yearly_packing["add_offset"])
         src_var.set_auto_maskandscale(False)
         dst_var.set_auto_maskandscale(False)
 
 
-def _copy_variable_slice(src_var, dst_var, src_start, src_stop, dst_start):
-    time_axis = src_var.dimensions.index("time")
-    src_key = [slice(None)] * src_var.ndim
-    dst_key = [slice(None)] * dst_var.ndim
+def _variable_slice(var, start, stop):
+    time_axis = var.dimensions.index("time")
+    key = [slice(None)] * var.ndim
+    key[time_axis] = slice(start, stop)
+    return tuple(key)
+
+
+def _repack_raw(raw_values, source_var, yearly_packing):
+    missing = _missing_mask(raw_values, source_var)
+    source_scale, source_offset = _packing(source_var)
+    packed_float = raw_values.astype(np.float64)
+    packed_float *= source_scale / yearly_packing["scale_factor"]
+    packed_float += (source_offset - yearly_packing["add_offset"]) / yearly_packing[
+        "scale_factor"
+    ]
+    np.rint(packed_float, out=packed_float)
+
+    valid = ~missing
+    if np.any(valid):
+        packed_min = float(np.min(packed_float, where=valid, initial=np.inf))
+        packed_max = float(np.max(packed_float, where=valid, initial=-np.inf))
+        if (
+            packed_min < yearly_packing["code_min"]
+            or packed_max > yearly_packing["code_max"]
+        ):
+            raise RuntimeError(
+                f"{source_var.name}: values exceed year-wide packing range "
+                f"[{yearly_packing['code_min']}, {yearly_packing['code_max']}]"
+            )
+        np.clip(
+            packed_float,
+            yearly_packing["code_min"],
+            yearly_packing["code_max"],
+            out=packed_float,
+        )
+
+    packed = packed_float.astype(source_var.dtype)
+    packed[missing] = yearly_packing["fill_value"]
+    return packed
+
+
+def _copy_variable_slice(
+    src_var, dst_var, src_start, src_stop, dst_start, yearly_packing=None
+):
+    src_key = _variable_slice(src_var, src_start, src_stop)
     count = src_stop - src_start
-    src_key[time_axis] = slice(src_start, src_stop)
-    dst_key[time_axis] = slice(dst_start, dst_start + count)
-    dst_var[tuple(dst_key)] = src_var[tuple(src_key)]
+    dst_key = _variable_slice(dst_var, dst_start, dst_start + count)
+    raw_values = np.asarray(src_var[src_key])
+    if yearly_packing is not None:
+        raw_values = _repack_raw(raw_values, src_var, yearly_packing)
+    dst_var[dst_key] = raw_values
 
 
 def _copy_static_variables(template_ds, out_ds):
@@ -335,12 +605,19 @@ def _copy_static_variables(template_ds, out_ds):
 
 
 def _write_yearly_file(
-    source_files, tmp_path, stream, year, varname, runcmd, copy_time_block
+    source_files,
+    tmp_path,
+    stream,
+    year,
+    varname,
+    runcmd,
+    copy_time_block,
+    yearly_packing,
 ):
     with nc.Dataset(str(source_files[0])) as template, nc.Dataset(
         str(tmp_path), "w", format="NETCDF4"
     ) as out_ds:
-        _create_output_schema(out_ds, template, varname)
+        _create_output_schema(out_ds, template, varname, yearly_packing)
         _copy_static_variables(template, out_ds)
 
         now_iso = _local_iso_timestamp()
@@ -352,7 +629,8 @@ def _write_yearly_file(
         this_file = os.path.normpath(__file__)
         new_history = (
             f"{now_iso} rechunked from [93,91,180] to [1,721,1440] using netCDF4; "
-            f"{len(source_files)} monthly files from rt52 concatenated into one yearly file. "
+            f"{len(source_files)} monthly files decoded with their source packing and "
+            "repacked to one year-wide int16 encoding. "
             + get_provenance_metadata(this_file, runcmd)
         )
         out_ds.setncattr("title", re.sub(r"\s+\d{8}-\d{8}$", f" {year}", old_title))
@@ -364,6 +642,10 @@ def _write_yearly_file(
         out_ds.setncattr("rechunked_date", now_iso)
         out_ds.setncattr("original_chunking", "[93, 91, 180]")
         out_ds.setncattr("target_chunking", "[1, 721, 1440]")
+        out_ds.setncattr(
+            "yearly_packing_range",
+            f"[{yearly_packing['physical_min']}, {yearly_packing['physical_max']}]",
+        )
 
         out_index = 0
         for source_file in source_files:
@@ -385,97 +667,155 @@ def _write_yearly_file(
                     for src_start in range(0, time_len, copy_time_block):
                         src_stop = min(src_start + copy_time_block, time_len)
                         _copy_variable_slice(
-                            src_var, dst_var, src_start, src_stop, out_index + src_start
+                            src_var,
+                            dst_var,
+                            src_start,
+                            src_stop,
+                            out_index + src_start,
+                            yearly_packing if name == varname else None,
                         )
                 out_index += time_len
 
 
-def _source_for_global_index(source_files, global_index):
-    remaining = global_index
-    for source_file in source_files:
-        with nc.Dataset(str(source_file)) as ds:
-            time_len = len(ds.dimensions["time"])
-        if remaining < time_len:
-            return source_file, remaining
-        remaining -= time_len
-    raise IndexError(f"global time index out of range: {global_index}")
+def _decoded_tolerance(output_var, source_values, output_values, valid):
+    scale_factor, _ = _packing(output_var)
+    if np.any(valid):
+        magnitude = max(
+            1.0,
+            float(np.max(np.abs(source_values), where=valid, initial=0.0)),
+            float(np.max(np.abs(output_values), where=valid, initial=0.0)),
+        )
+    else:
+        magnitude = 1.0
+    return abs(scale_factor) * 0.500001 + np.finfo(np.float64).eps * magnitude * 16
 
 
 def validate_preservation(out_path, source_files, varname):
-    """Check output metadata and sampled raw packed values against source files."""
-    with nc.Dataset(str(source_files[0])) as src0, nc.Dataset(str(out_path)) as out_ds:
-        if set(src0.variables) != set(out_ds.variables):
+    """Check metadata, coordinates, time, and decoded data against every source month."""
+    _validate_source_schema(source_files, varname)
+
+    with nc.Dataset(str(source_files[0])) as source, nc.Dataset(
+        str(out_path)
+    ) as output:
+        if set(source.variables) != set(output.variables):
             raise RuntimeError(
                 "variable names differ between source template and output"
             )
 
-        out_var = out_ds.variables[varname]
-        src_var = src0.variables[varname]
-        out_var.set_auto_maskandscale(False)
-        src_var.set_auto_maskandscale(False)
+        source_var = source.variables[varname]
+        output_var = output.variables[varname]
+        source_var.set_auto_maskandscale(False)
+        output_var.set_auto_maskandscale(False)
+        _packing(output_var)
 
-        if out_var.dimensions != src_var.dimensions:
+        if output_var.dimensions != source_var.dimensions:
             raise RuntimeError(f"{varname}: dimensions differ")
-        if out_var.shape[1:] != src_var.shape[1:]:
-            raise RuntimeError(f"{varname}: non-time shape differs")
-        if str(out_var.dtype) != str(src_var.dtype):
+        if output_var.shape[1:] != source_var.shape[1:]:
+            raise RuntimeError(f"{varname}: spatial shape differs")
+        if str(output_var.dtype) != str(source_var.dtype):
             raise RuntimeError(f"{varname}: dtype differs")
+        if set(output_var.ncattrs()) != set(source_var.ncattrs()):
+            raise RuntimeError(f"{varname}: attribute names differ")
 
-        for attr in PRESERVED_VAR_ATTRS:
-            _require_matching_attr(src_var, out_var, attr, varname)
-        _require_matching_attr(src_var, out_var, "_FillValue", varname)
+        _require_matching_attrs(
+            source_var,
+            output_var,
+            varname,
+            exclude=("scale_factor", "add_offset"),
+        )
 
         for coord in ("latitude", "longitude"):
-            if coord in src0.variables:
-                src_coord = src0.variables[coord]
-                out_coord = out_ds.variables[coord]
-                src_coord.set_auto_maskandscale(False)
-                out_coord.set_auto_maskandscale(False)
-                if src_coord.dimensions != out_coord.dimensions:
-                    raise RuntimeError(f"{coord}: dimensions differ")
-                if not np.array_equal(src_coord[:], out_coord[:]):
-                    raise RuntimeError(f"{coord}: coordinate values differ")
-                for attr in src_coord.ncattrs():
-                    _require_matching_attr(src_coord, out_coord, attr, coord)
+            source_coord = source.variables[coord]
+            output_coord = output.variables[coord]
+            source_coord.set_auto_maskandscale(False)
+            output_coord.set_auto_maskandscale(False)
+            if source_coord.dimensions != output_coord.dimensions:
+                raise RuntimeError(f"{coord}: dimensions differ")
+            if not np.array_equal(source_coord[:], output_coord[:]):
+                raise RuntimeError(f"{coord}: coordinate values differ")
+            if set(source_coord.ncattrs()) != set(output_coord.ncattrs()):
+                raise RuntimeError(f"{coord}: attribute names differ")
+            for attr in source_coord.ncattrs():
+                _require_matching_attr(source_coord, output_coord, attr, coord)
 
-        out_time = out_ds.variables["time"]
-        out_time.set_auto_maskandscale(False)
-        for attr in src0.variables["time"].ncattrs():
-            _require_matching_attr(src0.variables["time"], out_time, attr, "time")
+        source_time = source.variables["time"]
+        output_time = output.variables["time"]
+        if set(source_time.ncattrs()) != set(output_time.ncattrs()):
+            raise RuntimeError("time: attribute names differ")
+        for attr in source_time.ncattrs():
+            _require_matching_attr(source_time, output_time, attr, "time")
 
-    time_parts = []
+    source_time_parts = []
     for source_file in source_files:
-        with nc.Dataset(str(source_file)) as src_ds:
-            time_var = src_ds.variables["time"]
+        with nc.Dataset(str(source_file)) as source:
+            time_var = source.variables["time"]
             time_var.set_auto_maskandscale(False)
-            time_parts.append(np.asarray(time_var[:]))
-    source_time = np.concatenate(time_parts)
+            source_time_parts.append(np.asarray(time_var[:]))
+    source_time = np.concatenate(source_time_parts)
 
-    with nc.Dataset(str(out_path)) as out_ds:
-        out_time = out_ds.variables["time"]
-        out_time.set_auto_maskandscale(False)
-        if not np.array_equal(source_time, np.asarray(out_time[:])):
+    seed = zlib.crc32(f"{Path(out_path).name}:{varname}".encode())
+    rng = np.random.default_rng(seed)
+    max_error = 0.0
+    max_tolerance = 0.0
+    output_index = 0
+
+    with nc.Dataset(str(out_path)) as output:
+        output_time = output.variables["time"]
+        output_time.set_auto_maskandscale(False)
+        if not np.array_equal(source_time, np.asarray(output_time[:])):
             raise RuntimeError("time values differ between source files and output")
 
-        total_time = len(out_ds.dimensions["time"])
-        sample_indices = sorted({0, total_time // 2, total_time - 1})
-        out_var = out_ds.variables[varname]
-        out_var.set_auto_maskandscale(False)
-        for global_index in sample_indices:
-            source_file, local_index = _source_for_global_index(
-                source_files, global_index
-            )
-            with nc.Dataset(str(source_file)) as src_ds:
-                src_var = src_ds.variables[varname]
-                src_var.set_auto_maskandscale(False)
-                src_values = np.asarray(src_var[local_index : local_index + 1, :, :])
-            out_values = np.asarray(out_var[global_index : global_index + 1, :, :])
-            if not np.array_equal(src_values, out_values):
-                raise RuntimeError(
-                    f"raw packed values differ at sampled time index {global_index}"
-                )
+        output_var = output.variables[varname]
+        output_var.set_auto_maskandscale(False)
+        # Use a reproducible random timestep from every month. Comparing decoded
+        # full fields catches month-specific packing errors at modest I/O cost.
+        for source_file in source_files:
+            with nc.Dataset(str(source_file)) as source:
+                source_var = source.variables[varname]
+                source_var.set_auto_maskandscale(False)
+                time_len = len(source.dimensions["time"])
+                local_index = int(rng.integers(0, time_len))
+                source_raw = np.asarray(source_var[local_index, :, :])
+                output_raw = np.asarray(output_var[output_index + local_index, :, :])
+                source_missing = _missing_mask(source_raw, source_var)
+                output_missing = _missing_mask(output_raw, output_var)
+                if not np.array_equal(source_missing, output_missing):
+                    raise RuntimeError(
+                        f"missing-value mask differs for {source_file.name} "
+                        f"at time index {local_index}"
+                    )
 
-    logging.info("preservation: %s raw/metadata checks - OK", Path(out_path).name)
+                valid = ~source_missing
+                source_values = _decode_raw(source_raw, source_var)
+                output_values = _decode_raw(output_raw, output_var)
+                tolerance = _decoded_tolerance(
+                    output_var, source_values, output_values, valid
+                )
+                error = float(
+                    np.max(
+                        np.abs(source_values - output_values),
+                        where=valid,
+                        initial=0.0,
+                    )
+                )
+                if error > tolerance:
+                    raise RuntimeError(
+                        f"decoded values differ for {source_file.name} at time index "
+                        f"{local_index}: max error {error:.17g} exceeds yearly packing "
+                        f"tolerance {tolerance:.17g}"
+                    )
+                max_error = max(max_error, error)
+                max_tolerance = max(max_tolerance, tolerance)
+                output_index += time_len
+
+    logging.info(
+        "preservation: %s metadata/time and %s monthly decoded fields - OK "
+        "(max error %.6g, tolerance %.6g)",
+        Path(out_path).name,
+        len(source_files),
+        max_error,
+        max_tolerance,
+    )
 
 
 # -- single-task processing -----------------------------------------------------
@@ -504,6 +844,7 @@ def process_one(
         return False
 
     source_time_count = _source_time_count(source_files)
+    _validate_source_schema(source_files, varname)
     full_year_count = _full_year_hours(year)
     source_is_partial = source_time_count != full_year_count
     if source_is_partial:
@@ -543,13 +884,19 @@ def process_one(
             )
             return True
 
+    yearly_packing = _calculate_yearly_packing(source_files, varname)
     logging.info(
-        "Processing %s/%s: %s files, %s time records -> %s",
+        "Processing %s/%s: %s files, %s time records -> %s; "
+        "yearly scale_factor=%.17g add_offset=%.17g physical range=[%.17g, %.17g]",
         stream,
         year,
         len(source_files),
         source_time_count,
         out_path.name,
+        yearly_packing["scale_factor"],
+        yearly_packing["add_offset"],
+        yearly_packing["physical_min"],
+        yearly_packing["physical_max"],
     )
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -561,7 +908,14 @@ def process_one(
     t0 = time.time()
     try:
         _write_yearly_file(
-            source_files, tmp_path, stream, year, varname, runcmd, copy_time_block
+            source_files,
+            tmp_path,
+            stream,
+            year,
+            varname,
+            runcmd,
+            copy_time_block,
+            yearly_packing,
         )
         validate(
             tmp_path,
@@ -856,7 +1210,7 @@ def main():
 
     total_elapsed = time.time() - t_start
     print(
-        f"\nCompleted {len(tasks)} tasks in {total_elapsed:.0f}s ({total_elapsed / 3600:.1f}h",
+        f"\nCompleted {len(tasks)} tasks in {total_elapsed:.0f}s ({total_elapsed / 3600:.1f}h)",
         flush=True,
     )
     if failures:
