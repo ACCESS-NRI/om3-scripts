@@ -6,9 +6,13 @@ from unittest.mock import patch
 from pathlib import Path
 from subprocess import run
 
+from matplotlib import pyplot as plt
+
 import xarray as xr
 import numpy as np
 import esmpy
+import regionmask
+from scipy.ndimage import binary_dilation
 from copy import copy
 
 from mesh_generation.generate_mesh import mom6_mask_detection, MomSuperGrid
@@ -92,12 +96,12 @@ def mesh_in(mom_grid, tmp_path):
     """
     mesh_filename_in = str(tmp_path) + "/mesh_in.nc"
 
-    test_mesh = MomSuperGrid(mom_grid.path, topog_filename=None)
-    test_mesh.create_mesh()
-    test_mesh.write(mesh_filename_in)
+    test_grid = MomSuperGrid(mom_grid.path, topog_filename=None)
+    test_grid.create_mesh()
+    test_grid.write(mesh_filename_in)
 
     result = mesh_creator(mesh_filename_in)
-    result["mom_super_grid"] = test_mesh
+    result["mom_super_grid"] = test_grid
 
     return result
 
@@ -108,19 +112,30 @@ def mesh_out(mom_grid, tmp_path):
     Patch the mom6_mask_detection function, and use the mask from the mom_grid fixture,
     rather than need a topog file
     """
+
     mesh_filename_out = str(tmp_path) + "/mesh_out.nc"
 
-    with patch(
-        "mesh_generation.generate_mesh.mom6_mask_detection",
-        return_value=mom_grid.mask_ds.mask.values,
-    ):
-        test_mesh = MomSuperGrid(mom_grid.path, topog_filename=mom_grid.mask_path)
+    test_grid = MomSuperGrid(mom_grid.path) #, topog_filename=mom_grid.mask_path)
 
-    test_mesh.create_mesh()
-    test_mesh.write(mesh_filename_out)
+    # Generate a rough landmask
+    mask = regionmask.defined_regions.natural_earth_v5_1_2.ocean_basins_50.mask(
+        np.reshape(test_grid.x_centres, (mom_grid.ny, mom_grid.nx )),
+        np.reshape(test_grid.y_centres, (mom_grid.ny, mom_grid.nx ))
+    ).notnull()
+    test_grid.mask = mask.astype(np.int8).values.flatten()
+
+    # Save a plot of the landmask for debugging
+    plt.figure()
+    plt.pcolor(mask)
+    plt.colorbar()
+    plt.title('Test mask')
+    plt.savefig('test_mask.png')
+
+    test_grid.create_mesh()
+    test_grid.write(mesh_filename_out)
 
     result = mesh_creator(mesh_filename_out)
-    result["mom_super_grid"] = test_mesh
+    result["mom_super_grid"] = test_grid
 
     return result
 
@@ -142,25 +157,11 @@ def weights_file(mesh_out, mom_grid, tmp_path):
 
 
 # ----------------
-# the actual tests:
+# the actual test:
 
 
-def test_generate_mask(mesh_out, mom_grid):
-    """
-    This test just convinces us the patch mom6_mask_detection in mesh_out works
-    """
-
-    assert np.all(
-        mesh_out["mom_super_grid"].mask == mom_grid.mask_ds.mask.values.flatten()
-    )
-
-    assert len(mesh_out["mom_super_grid"].mesh.elementCount.values) == (
-        mom_grid.ny * mom_grid.nx
-    )
-
-
-@pytest.mark.parametrize("data", ["All", "None", "Ocean", "Land"])
-def test_regrid_conservation(data, mesh_in, mesh_out, weights_file, tmp_path):
+@pytest.mark.parametrize("data", ["All", "None", "Ocean", "Land", "Ocean_Cells_Touching_Land"])
+def test_regrid_conservation(data, mesh_in, mesh_out, weights_file, mom_grid, tmp_path):
     """
     For some provided meshes, and weights file, confirm that the weights are conservative
     """
@@ -171,6 +172,7 @@ def test_regrid_conservation(data, mesh_in, mesh_out, weights_file, tmp_path):
     area_out = mesh_out["area"]
 
     match data:
+        # This is where runoff exist on the input mesh
         case "All":
             fld_in.data[:] = 1e10
         case "None":
@@ -181,12 +183,28 @@ def test_regrid_conservation(data, mesh_in, mesh_out, weights_file, tmp_path):
             fld_in.data[:] = 1e-20 * (
                 mesh_out["mom_super_grid"].mesh.elementMask == 0
             ).astype(int)
+        case "Ocean_Cells_Touching_Land":
+            mask_2d = np.reshape(
+                mesh_out["mom_super_grid"].mesh.elementMask.values, 
+                (mom_grid.ny, mom_grid.nx)
+            )
+            # make new mask of land plus one adjacent cell of ocean
+            land_neighbours = binary_dilation(mask_2d == 0)
+            # target for runoff is ocean cells which are adjacent land
+            fld_in.data[:] = ((land_neighbours & mask_2d) == 1).flatten()
 
     # for unclear reasons, we need to zero the output field before populating it
     # it looks like cells which are not destinations in remapping can introduce rounding error
     fld_out.data[:] = 0
 
     esmpy.RegridFromFile(fld_in, fld_out, filename=weights_file)
+
+    # Save a plot of the new runoff, for debugging
+    plt.figure()
+    plt.pcolor(np.reshape(fld_out.data, (mom_grid.ny, mom_grid.nx)))
+    plt.colorbar()
+    plt.title(f'Runoff cells {data}')
+    plt.savefig(f'Runoff cells {data}.png')
 
     print(f"Total before Regrid : {np.sum(fld_in.data*area_in)}")
     print(f"Total after Regrid : {np.sum(fld_out.data*area_out)}")
