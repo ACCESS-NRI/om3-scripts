@@ -102,7 +102,7 @@ def mesh_in(mom_grid, tmp_path):
 @pytest.fixture()
 def mesh_out(mom_grid, tmp_path):
     """
-    For the output mesh, make the Grid object without a mask, then splice in a mask 
+    For the output mesh, make the Grid object without a mask, then splice in a mask
     from regionmask package
     """
 
@@ -112,8 +112,8 @@ def mesh_out(mom_grid, tmp_path):
 
     # Generate a rough landmask
     mask = regionmask.defined_regions.natural_earth_v5_1_2.ocean_basins_50.mask(
-        np.reshape(test_grid.x_centres, (mom_grid.ny, mom_grid.nx )),
-        np.reshape(test_grid.y_centres, (mom_grid.ny, mom_grid.nx ))
+        np.reshape(test_grid.x_centres, (mom_grid.ny, mom_grid.nx)),
+        np.reshape(test_grid.y_centres, (mom_grid.ny, mom_grid.nx)),
     ).notnull()
     test_grid.mask = mask.astype(np.int8).values.flatten()
 
@@ -121,8 +121,8 @@ def mesh_out(mom_grid, tmp_path):
     plt.figure()
     plt.pcolor(mask)
     plt.colorbar()
-    plt.title('Test mask')
-    plt.savefig('test_mask.png')
+    plt.title("Test mask")
+    plt.savefig("test_mask.png")
 
     test_grid.create_mesh()
     test_grid.write(mesh_filename_out)
@@ -153,7 +153,9 @@ def weights_file(mesh_out, mom_grid, tmp_path):
 # the actual test:
 
 
-@pytest.mark.parametrize("data", ["All", "None", "Ocean", "Land", "Ocean_Cells_Touching_Land"])
+@pytest.mark.parametrize(
+    "data", ["All", "None", "Ocean", "Land", "Ocean_Cells_Touching_Land"]
+)
 def test_regrid_conservation(data, mesh_in, mesh_out, weights_file, mom_grid, tmp_path):
     """
     For some provided meshes, and weights file, confirm that the weights are conservative
@@ -178,8 +180,8 @@ def test_regrid_conservation(data, mesh_in, mesh_out, weights_file, mom_grid, tm
             ).astype(int)
         case "Ocean_Cells_Touching_Land":
             mask_2d = np.reshape(
-                mesh_out["mom_super_grid"].mesh.elementMask.values, 
-                (mom_grid.ny, mom_grid.nx)
+                mesh_out["mom_super_grid"].mesh.elementMask.values,
+                (mom_grid.ny, mom_grid.nx),
             )
             # make new mask of land plus one adjacent cell of ocean
             land_neighbours = binary_dilation(mask_2d == 0)
@@ -196,8 +198,8 @@ def test_regrid_conservation(data, mesh_in, mesh_out, weights_file, mom_grid, tm
     plt.figure()
     plt.pcolor(np.reshape(fld_out.data, (mom_grid.ny, mom_grid.nx)))
     plt.colorbar()
-    plt.title(f'Runoff cells {data}')
-    plt.savefig(f'Runoff cells {data}.png')
+    plt.title(f"Runoff cells {data}")
+    plt.savefig(f"Runoff cells {data}.png")
 
     print(f"Total before Regrid : {np.sum(fld_in.data*area_in)}")
     print(f"Total after Regrid : {np.sum(fld_out.data*area_out)}")
