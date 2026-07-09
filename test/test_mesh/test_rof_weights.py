@@ -18,9 +18,9 @@ from copy import copy
 from mesh_generation.generate_mesh import mom6_mask_detection, MomSuperGrid
 from mesh_generation.generate_rof_weights import drof_remapping_weights
 
-# create test grids at 4 degrees and 0.1 degrees
+# create test grids at 4 degrees and 1 degrees
 # 4 degress is the lowest tested in ocean_model_grid_generator
-# going higher resolution than 0.1 has too much computational cost
+# going higher resolution than 1 has too much computational cost (aka crashed the github runner)
 _test_resolutions = [1, 4]
 
 
