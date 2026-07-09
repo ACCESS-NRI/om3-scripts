@@ -55,13 +55,6 @@ class MomGridFixture:
         # open ocean_hgrid.nc
         self.ds = xr.open_dataset(self.path)
 
-        # an ocean mask with a arbitrary mask
-        self.mask_ds = xr.Dataset()
-        self.mask_ds["mask"] = (
-            self.ds.area.coarsen(ny=2).sum().coarsen(nx=2).sum()
-        ) > 5e9
-        self.mask_ds.to_netcdf(self.mask_path)
-
         self.ny = int(len(self.ds.ny) / 2)
         self.nx = int(len(self.ds.nx) / 2)
 
