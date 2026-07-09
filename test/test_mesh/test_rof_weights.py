@@ -102,13 +102,13 @@ def mesh_in(mom_grid, tmp_path):
 @pytest.fixture()
 def mesh_out(mom_grid, tmp_path):
     """
-    Patch the mom6_mask_detection function, and use the mask from the mom_grid fixture,
-    rather than need a topog file
+    For the output mesh, make the Grid object without a mask, then splice in a mask 
+    from regionmask package
     """
 
     mesh_filename_out = str(tmp_path) + "/mesh_out.nc"
 
-    test_grid = MomSuperGrid(mom_grid.path) #, topog_filename=mom_grid.mask_path)
+    test_grid = MomSuperGrid(mom_grid.path)
 
     # Generate a rough landmask
     mask = regionmask.defined_regions.natural_earth_v5_1_2.ocean_basins_50.mask(
