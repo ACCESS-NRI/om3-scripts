@@ -37,7 +37,6 @@ class MomGridFixture:
 
     def __init__(self, res, tmp_path):
         self.path = str(tmp_path) + "/ocean_hgrid.nc"
-        self.mask_path = str(tmp_path) + "/ocean_mask.nc"
 
         # generate a tripolar grid as test data
         run(
