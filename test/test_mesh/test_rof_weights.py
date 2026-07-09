@@ -21,7 +21,7 @@ from mesh_generation.generate_rof_weights import drof_remapping_weights
 # create test grids at 4 degrees and 0.1 degrees
 # 4 degress is the lowest tested in ocean_model_grid_generator
 # going higher resolution than 0.1 has too much computational cost
-_test_resolutions = [4, 0.1]
+_test_resolutions = [0.5, 4]
 
 
 # so that our fixtures are only created once in this pytest module, we need this special version of 'tmp_path'
