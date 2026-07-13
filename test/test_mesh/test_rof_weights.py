@@ -77,15 +77,15 @@ def mesh_creator(filename):
     fld.get_area()
     area = copy(fld.data)
 
-    return {"fld": fld, "area": area}
+    return {"fld": fld, "area": area, "path": filename}
 
 
-@pytest.fixture()
-def mesh_in(mom_grid, tmp_path):
+@pytest.fixture(scope="module")
+def mesh_in(mom_grid, grid_path):
     """
     For the input mesh, use an unmasked mesh
     """
-    mesh_filename_in = str(tmp_path) + "/mesh_in.nc"
+    mesh_filename_in = str(grid_path) + "/mesh_in.nc"
 
     test_grid = MomSuperGrid(mom_grid.path, topog_filename=None)
     test_grid.create_mesh()
@@ -97,14 +97,14 @@ def mesh_in(mom_grid, tmp_path):
     return result
 
 
-@pytest.fixture()
-def mesh_out(mom_grid, tmp_path):
+@pytest.fixture(scope="module")
+def mesh_out(mom_grid, grid_path):
     """
     For the output mesh, make the Grid object without a mask, then splice in a mask
     from regionmask package
     """
 
-    mesh_filename_out = str(tmp_path) + "/mesh_out.nc"
+    mesh_filename_out = str(grid_path) + "/mesh_out.nc"
 
     test_grid = MomSuperGrid(mom_grid.path)
 
@@ -131,25 +131,28 @@ def mesh_out(mom_grid, tmp_path):
     return result
 
 
-@pytest.fixture
-def weights_file(mom_grid, tmp_path):
+@pytest.fixture(scope="module")
+def weights_file(mom_grid, mesh_out, grid_path):
+
+    weights_path = Path(str(grid_path) + "/drof_remap_weights.nc")
+
+    #because this is module scoped, make sure any old weights are deleted
+    weights_path.unlink(missing_ok=True) 
 
     drof_remapping_weights(
-        str(tmp_path) + "/mesh_out.nc",
-        str(tmp_path) + "/drof_remap_weights.nc",
+        mesh_out['path'],
+        str(weights_path),
         mom_grid.nx,
         mom_grid.ny,
     )
 
-    if not Path(str(tmp_path) + "/drof_remap_weights.nc").exists():
+    if not weights_path.exists():
         raise RuntimeError("drof remap weights not created")
 
-    return str(tmp_path) + "/drof_remap_weights.nc"
-
+    return str(weights_path)
 
 # ----------------
 # the actual test:
-
 
 @pytest.mark.parametrize(
     "data", ["All", "None", "Ocean", "Land", "Ocean_Cells_Touching_Land"]
