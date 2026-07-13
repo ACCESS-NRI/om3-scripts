@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0.
 
 import pytest
-from unittest.mock import patch
 from pathlib import Path
 from subprocess import run
 
@@ -15,7 +14,7 @@ import regionmask
 from scipy.ndimage import binary_dilation
 from copy import copy
 
-from mesh_generation.generate_mesh import mom6_mask_detection, MomSuperGrid
+from mesh_generation.generate_mesh import MomSuperGrid
 from mesh_generation.generate_rof_weights import drof_remapping_weights
 
 # create test grids at 4 degrees and 1 degrees
@@ -133,7 +132,7 @@ def mesh_out(mom_grid, tmp_path):
 
 
 @pytest.fixture
-def weights_file(mesh_out, mom_grid, tmp_path):
+def weights_file(mom_grid, tmp_path):
 
     drof_remapping_weights(
         str(tmp_path) + "/mesh_out.nc",
@@ -155,7 +154,7 @@ def weights_file(mesh_out, mom_grid, tmp_path):
 @pytest.mark.parametrize(
     "data", ["All", "None", "Ocean", "Land", "Ocean_Cells_Touching_Land"]
 )
-def test_regrid_conservation(data, mesh_in, mesh_out, weights_file, mom_grid, tmp_path):
+def test_regrid_conservation(data, mesh_in, mesh_out, weights_file, mom_grid):
     """
     For some provided meshes, and weights file, confirm that the weights are conservative
     """
