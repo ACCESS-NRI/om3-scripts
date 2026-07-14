@@ -111,13 +111,13 @@ def drof_remapping_weights(mesh_filename, weights_filename, nx, ny):
     col = mod_mesh_ds.elementCount.astype(int)
     row = target_cells_i[ii[:, 0]]
 
-    # Get the mesh element areas and adjust for area change between the 
+    # Get the mesh element areas and adjust for area change between the
     # source cell (col) and destination (row)
     area = mesh_area(mesh_filename)
     old_area = area[col]
     new_area = area[row]
 
-    col += 1 # weights files are 1-based index by default
+    col += 1  # weights files are 1-based index by default
     row += 1
     S = old_area / new_area
 
