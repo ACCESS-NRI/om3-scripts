@@ -136,11 +136,11 @@ def weights_file(mom_grid, mesh_out, grid_path):
 
     weights_path = Path(str(grid_path) + "/drof_remap_weights.nc")
 
-    #because this is module scoped, make sure any old weights are deleted
-    weights_path.unlink(missing_ok=True) 
+    # because this is module scoped, make sure any old weights are deleted
+    weights_path.unlink(missing_ok=True)
 
     drof_remapping_weights(
-        mesh_out['path'],
+        mesh_out["path"],
         str(weights_path),
         mom_grid.nx,
         mom_grid.ny,
@@ -151,8 +151,10 @@ def weights_file(mom_grid, mesh_out, grid_path):
 
     return str(weights_path)
 
+
 # ----------------
 # the actual test:
+
 
 @pytest.mark.parametrize(
     "data", ["All", "None", "Ocean", "Land", "Ocean_Cells_Touching_Land"]
