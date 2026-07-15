@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # =========================================================================================
-# Generate an remapping weights between for an ESMF mesh files for remapping a runoff field
+# Generate remapping weights from an ESMF mesh file for remapping a runoff field
 # from an unmasked mesh to a masked mesh without losing any water volume. Each field on the
 # unmasked mesh is mapped to the nearest ocean cell in the resulting weights.
 #
@@ -47,7 +47,7 @@ COMP_ENCODING = {"complevel": 1, "compression": "zlib"}  # compression settings 
 
 def mesh_area(mesh_filename):
     """
-    Calculate area for each cell in a mesh. per CMEPS we are using the internally calculated areas, not the user provided ones.
+    Calculate area for each cell in a mesh. Per CMEPS we are using the internally calculated areas, not the user provided ones.
     """
 
     model_mesh = esmpy.Mesh(
