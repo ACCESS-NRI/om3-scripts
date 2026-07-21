@@ -333,7 +333,7 @@ def main():
 
     args = parser.parse_args()
 
-    return rof_remapping_weights(
+    return gen_rof_weights(
         args.mesh_filename, args.weights_filename, args.nx, args.ny, args.spread
     )
 
