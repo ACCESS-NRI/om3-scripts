@@ -87,6 +87,12 @@ YEAR_FIRST, YEAR_LAST = 1940, 2026
 COMPLEVEL = 5
 CHUNK_T, CHUNK_LAT, CHUNK_LON = 1, 721, 1440
 COPY_TIME_BLOCK = 93
+REPACKING_METADATA_ATTRS = (
+    "repacking_note",
+    "repacking_absolute_tolerance",
+    "repacking_tolerance_formula",
+    "repacking_allclose_rtol",
+)
 
 # -- validation ----------------------------------------------------------------
 
@@ -148,6 +154,44 @@ def _packing(var):
     if scale_factor == 0:
         raise RuntimeError(f"{var.name}: scale_factor must be non-zero")
     return scale_factor, add_offset
+
+
+def _repacking_absolute_tolerance(scale_factor):
+    return 0.5 * abs(float(scale_factor))
+
+
+def _set_repacking_metadata(var, scale_factor):
+    var.setncattr(
+        "repacking_note",
+        "Monthly source files were decoded using their original scale_factor/"
+        "add_offset and repacked to one year-wide int16 encoding. Decoded "
+        "values are preserved within half of the output scale_factor.",
+    )
+    var.setncattr(
+        "repacking_absolute_tolerance",
+        np.float64(_repacking_absolute_tolerance(scale_factor)),
+    )
+    var.setncattr("repacking_tolerance_formula", "0.5 * abs(scale_factor)")
+    var.setncattr("repacking_allclose_rtol", np.float64(1.0e-6))
+
+
+def _validate_repacking_metadata(var):
+    scale_factor, _ = _packing(var)
+    for attr in REPACKING_METADATA_ATTRS:
+        if attr not in var.ncattrs():
+            raise RuntimeError(f"{var.name}: missing attribute {attr!r}")
+    expected = _repacking_absolute_tolerance(scale_factor)
+    actual = _scalar_attr(var, "repacking_absolute_tolerance")
+    if not np.isclose(actual, expected, rtol=0.0, atol=np.finfo(np.float64).eps):
+        raise RuntimeError(
+            f"{var.name}: repacking_absolute_tolerance={actual:.17g}, "
+            f"expected {expected:.17g}"
+        )
+    if var.getncattr("repacking_tolerance_formula") != "0.5 * abs(scale_factor)":
+        raise RuntimeError(f"{var.name}: unexpected repacking_tolerance_formula")
+    rtol = _scalar_attr(var, "repacking_allclose_rtol")
+    if rtol != 1.0e-6:
+        raise RuntimeError(f"{var.name}: unexpected repacking_allclose_rtol={rtol}")
 
 
 def _missing_codes(var):
@@ -260,7 +304,7 @@ def validate(
         if not ds.dimensions["time"].isunlimited():
             raise RuntimeError("time dimension is not UNLIMITED")
 
-        _packing(var)
+        _validate_repacking_metadata(var)
         filters = var.filters()
         if not filters.get("zlib"):
             raise RuntimeError("main variable is not compressed with zlib")
@@ -504,6 +548,14 @@ def _copy_attrs(src_obj, dst_obj, skip=()):
             dst_obj.setncattr(attr, src_obj.getncattr(attr))
 
 
+def _clean_summary_attr(summary):
+    replica_sentence = (
+        "This file is part of the ERA5 replica hosted at NCI Australia. "
+        "For more information please see http://dx.doi.org/10.25914/5f48874388857"
+    )
+    return re.sub(r"\s+", " ", summary.replace(replica_sentence, "")).strip()
+
+
 def _create_output_schema(out_ds, template_ds, varname, yearly_packing):
     for dim_name, dim in template_ds.dimensions.items():
         out_ds.createDimension(dim_name, None if dim_name == "time" else len(dim))
@@ -537,6 +589,7 @@ def _create_output_schema(out_ds, template_ds, varname, yearly_packing):
         if name == varname:
             dst_var.setncattr("scale_factor", yearly_packing["scale_factor"])
             dst_var.setncattr("add_offset", yearly_packing["add_offset"])
+            _set_repacking_metadata(dst_var, yearly_packing["scale_factor"])
         src_var.set_auto_maskandscale(False)
         dst_var.set_auto_maskandscale(False)
 
@@ -622,6 +675,12 @@ def _write_yearly_file(
 
         now_iso = _local_iso_timestamp()
         _copy_attrs(template, out_ds)
+        if "summary" in out_ds.ncattrs():
+            cleaned_summary = _clean_summary_attr(out_ds.getncattr("summary"))
+            if cleaned_summary:
+                out_ds.setncattr("summary", cleaned_summary)
+            else:
+                out_ds.delncattr("summary")
         old_title = template.getncattr("title") if "title" in template.ncattrs() else ""
         old_history = (
             template.getncattr("history") if "history" in template.ncattrs() else ""
@@ -642,6 +701,13 @@ def _write_yearly_file(
         out_ds.setncattr("rechunked_date", now_iso)
         out_ds.setncattr("original_chunking", "[93, 91, 180]")
         out_ds.setncattr("target_chunking", "[1, 721, 1440]")
+        out_ds.setncattr(
+            "rechunking_note",
+            "Variables are packed as int16 with one yearly scale_factor/add_offset. "
+            "When source monthly packing differs, decoded values are expected to "
+            "differ from source by at most each variable's "
+            "repacking_absolute_tolerance attribute.",
+        )
         out_ds.setncattr(
             "yearly_packing_range",
             f"[{yearly_packing['physical_min']}, {yearly_packing['physical_max']}]",
@@ -679,6 +745,7 @@ def _write_yearly_file(
 
 def _decoded_tolerance(output_var, source_values, output_values, valid):
     scale_factor, _ = _packing(output_var)
+    absolute_tolerance = _repacking_absolute_tolerance(scale_factor)
     if np.any(valid):
         magnitude = max(
             1.0,
@@ -687,7 +754,7 @@ def _decoded_tolerance(output_var, source_values, output_values, valid):
         )
     else:
         magnitude = 1.0
-    return abs(scale_factor) * 0.500001 + np.finfo(np.float64).eps * magnitude * 16
+    return absolute_tolerance * 1.000002 + np.finfo(np.float64).eps * magnitude * 16
 
 
 def validate_preservation(out_path, source_files, varname):
@@ -706,7 +773,7 @@ def validate_preservation(out_path, source_files, varname):
         output_var = output.variables[varname]
         source_var.set_auto_maskandscale(False)
         output_var.set_auto_maskandscale(False)
-        _packing(output_var)
+        _validate_repacking_metadata(output_var)
 
         if output_var.dimensions != source_var.dimensions:
             raise RuntimeError(f"{varname}: dimensions differ")
@@ -714,14 +781,17 @@ def validate_preservation(out_path, source_files, varname):
             raise RuntimeError(f"{varname}: spatial shape differs")
         if str(output_var.dtype) != str(source_var.dtype):
             raise RuntimeError(f"{varname}: dtype differs")
-        if set(output_var.ncattrs()) != set(source_var.ncattrs()):
+        expected_output_attrs = set(source_var.ncattrs()) | set(
+            REPACKING_METADATA_ATTRS
+        )
+        if set(output_var.ncattrs()) != expected_output_attrs:
             raise RuntimeError(f"{varname}: attribute names differ")
 
         _require_matching_attrs(
             source_var,
             output_var,
             varname,
-            exclude=("scale_factor", "add_offset"),
+            exclude=("scale_factor", "add_offset", *REPACKING_METADATA_ATTRS),
         )
 
         for coord in ("latitude", "longitude"):
