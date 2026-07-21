@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # =========================================================================================
-# Generate an remapping weights between for an ESMF mesh files for remapping a runoff field
+# Generate remapping weights from an ESMF mesh file for remapping a runoff field
 # from an unmasked mesh to a masked mesh without losing any water volume. Each field on the
 # unmasked mesh is mapped to the nearest ocean cell in the resulting weights.
 #
@@ -210,7 +210,7 @@ class Rof_Remapping_Weights:
 
         # Nospread points
         nospread_i = self.mesh_ds.elementCount.where(
-            self.spread_source_mask == False
+            self.spread_source_mask == False, other=0, drop=True
         ).astype(int)
         row = target_mask_nospread_i[i_1[nospread_i, 0]]
 
@@ -224,9 +224,9 @@ class Rof_Remapping_Weights:
         # Spread points
         if self.spread:
 
-            spread_i = self.mesh_ds.elementCount.where(self.spread_source_mask).astype(
-                int
-            )
+            spread_i = self.mesh_ds.elementCount.where(
+                self.spread_source_mask, other=0, drop=True
+            ).astype(int)
             row = np.zeros((len(spread_i), SPREAD_N), dtype=int)
 
             for i in range(0, SPREAD_N):
