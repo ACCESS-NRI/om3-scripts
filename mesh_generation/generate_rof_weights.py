@@ -56,10 +56,10 @@ SPREAD_POINTS = [
 SRC_DIST = 1
 
 # Number of cells to spread to
-SPREAD_N = 15
+SPREAD_N = 75
 
 # Decay distance when calculating spreading weights
-FOLD = 7
+FOLD = 15
 
 COMP_ENCODING = {"complevel": 1, "compression": "zlib"}  # compression settings to use
 
@@ -325,7 +325,7 @@ def main():
     )
     parser.add_argument(
         "--spread",
-        type=bool,
+        action=argparse.BooleanOptionalAction,
         required=False,
         default=True,
         help="Spread large rivers",
