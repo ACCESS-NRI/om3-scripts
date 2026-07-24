@@ -93,6 +93,7 @@ REPACKING_METADATA_ATTRS = (
     "repacking_tolerance_formula",
     "repacking_allclose_rtol",
 )
+DESCRIPTIVE_SOURCE_ATTRS = ("long_name",)
 
 # -- validation ----------------------------------------------------------------
 
@@ -134,6 +135,31 @@ def _require_matching_attrs(src_obj, dst_obj, label, exclude=()):
         )
     for attr in src_attrs:
         _require_matching_attr(src_obj, dst_obj, attr, label)
+
+
+def _log_source_attr_variations(source_files, varname, attrs):
+    for attr in attrs:
+        values = {}
+        for source_file in source_files:
+            with nc.Dataset(str(source_file)) as source:
+                source_var = source.variables[varname]
+                if attr not in source_var.ncattrs():
+                    continue
+                value = str(source_var.getncattr(attr))
+                values.setdefault(value, []).append(source_file.name)
+        if len(values) > 1:
+            variants = "; ".join(
+                f"{value!r} in {names[0]}..{names[-1]}"
+                for value, names in values.items()
+            )
+            logging.warning(
+                "%s: source monthly attribute %r varies; yearly output will use "
+                "the value from %s. Variants: %s",
+                varname,
+                attr,
+                source_files[0].name,
+                variants,
+            )
 
 
 def _scalar_attr(var, attr):
@@ -370,6 +396,8 @@ def _source_time_count(source_files):
 
 
 def _validate_source_schema(source_files, varname):
+    _log_source_attr_variations(source_files, varname, DESCRIPTIVE_SOURCE_ATTRS)
+
     with nc.Dataset(str(source_files[0])) as template:
         if varname not in template.variables:
             raise RuntimeError(f"missing variable {varname!r} in {source_files[0]}")
@@ -407,7 +435,7 @@ def _validate_source_schema(source_files, varname):
                     template_var,
                     source_var,
                     varname,
-                    exclude=("scale_factor", "add_offset"),
+                    exclude=("scale_factor", "add_offset", *DESCRIPTIVE_SOURCE_ATTRS),
                 )
 
                 for coord in ("latitude", "longitude"):
@@ -686,11 +714,11 @@ def _write_yearly_file(
             template.getncattr("history") if "history" in template.ncattrs() else ""
         )
         this_file = os.path.normpath(__file__)
+        provenance = get_provenance_metadata(runcmd=runcmd)
         new_history = (
             f"{now_iso} rechunked from [93,91,180] to [1,721,1440] using netCDF4; "
             f"{len(source_files)} monthly files decoded with their source packing and "
-            "repacked to one year-wide int16 encoding. "
-            + get_provenance_metadata(this_file, runcmd)
+            "repacked to one year-wide int16 encoding. " + provenance["history"]
         )
         out_ds.setncattr("title", re.sub(r"\s+\d{8}-\d{8}$", f" {year}", old_title))
         out_ds.setncattr(
