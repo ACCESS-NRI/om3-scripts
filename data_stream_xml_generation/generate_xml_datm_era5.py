@@ -5,13 +5,14 @@
 # Generate a datm xml file that contains a time-series of input atmosphere data files where all the fields in the stream are located.
 
 # To run:
-#   python generate_xml_datm_era5.py <year_first> <year_last>
+#   python generate_xml_datm_era5.py <year_first> <year_last> --input-root <yearly_era5_root>
 # To generate IAF xml file, set year_first and year_last to the forcing period
 # To generate RYF xml file, set year_first==year_last
 
 
 # Contact: Ezhilsabareesh Kannadasan <ezhilsabareesh.kannadasan@anu.edu.au>
 
+import argparse
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom import minidom
 import sys
@@ -67,22 +68,44 @@ STREAM_SPECS = [
 ]
 
 
-def rechunked_era5_input_file(era5_prefix, year):
-    end_month_day = "0331" if year == 2026 else "1231"
-    filename = f"{era5_prefix}_era5_oper_sfc_{year}0101-{year}{end_month_day}.nc"
-    return f"./INPUT/{era5_prefix}/{filename}"
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Generate DATM stream XML for yearly rechunked ERA5 files."
+    )
+    parser.add_argument("year_first", type=int)
+    parser.add_argument("year_last", type=int)
+    parser.add_argument(
+        "--input-root",
+        type=Path,
+        default=Path("./INPUT"),
+        help=(
+            "Root directory containing yearly ERA5 stream subdirectories. This is "
+            "used only to discover filenames; XML datafile paths are still written "
+            "relative to ./INPUT for payu staging."
+        ),
+    )
+    return parser.parse_args()
 
 
-if len(sys.argv) != 3:
-    print("Usage: python generate_xml_datm_era5.py year_first year_last")
-    sys.exit(1)
+def rechunked_era5_input_file(input_root, era5_prefix, year):
+    stream_dir = input_root / era5_prefix
+    matches = sorted(stream_dir.glob(f"{era5_prefix}_era5_oper_sfc_{year}*.nc"))
 
-try:
-    year_first = int(sys.argv[1])
-    year_last = int(sys.argv[2])
+    if len(matches) != 1:
+        raise FileNotFoundError(
+            f"Expected exactly one {year} file for {era5_prefix} in "
+            f"{stream_dir}, found {len(matches)}"
+        )
 
-except ValueError:
-    print("Year values must be integers")
+    return f"./INPUT/{era5_prefix}/{matches[0].name}"
+
+
+args = parse_args()
+year_first = args.year_first
+year_last = args.year_last
+
+if year_first > year_last:
+    print("year_first must be less than or equal to year_last")
     sys.exit(1)
 
 year_align = year_first
@@ -130,7 +153,9 @@ for stream_name, era5_prefix, datavar_pairs, mapalgo, offset_seconds in STREAM_S
 
     for year in range(year_first, year_last + 1):
         file_element = SubElement(datafiles, "file")
-        file_element.text = rechunked_era5_input_file(era5_prefix, year)
+        file_element.text = rechunked_era5_input_file(
+            args.input_root, era5_prefix, year
+        )
 # Convert the XML to a nicely formatted string
 xml_str = minidom.parseString(tostring(root)).toprettyxml(indent="  ")
 
