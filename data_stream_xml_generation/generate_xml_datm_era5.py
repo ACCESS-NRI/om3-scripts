@@ -17,7 +17,6 @@ from xml.dom import minidom
 import sys
 from datetime import datetime
 from pathlib import Path
-import calendar
 
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
@@ -66,6 +65,11 @@ STREAM_SPECS = [
     ("ERA5.U_10", "10u", [("u10", "Sa_u"), ("u10", "Sa_u10m")], "patch", 0),
     ("ERA5.V_10", "10v", [("v10", "Sa_v"), ("v10", "Sa_v10m")], "patch", 0),
 ]
+
+def rechunked_era5_input_file(era5_prefix, year):
+    end_month_day = "0331" if year == 2026 else "1231"
+    filename = f"{era5_prefix}_era5_oper_sfc_{year}0101-{year}{end_month_day}.nc"
+    return f"./INPUT/{era5_prefix}/{filename}"
 
 if len(sys.argv) != 3:
     print("Usage: python generate_xml_datm_era5.py year_first year_last")
@@ -122,22 +126,9 @@ for stream_name, era5_prefix, datavar_pairs, mapalgo, offset_seconds in STREAM_S
     SubElement(stream_info, "offset").text = str(offset_seconds)
     SubElement(stream_info, "tintalgo").text = "linear"
 
-    # Use the first source variable for RYF file naming.
-    driver_src_var = datavar_pairs[0][0]
-
     for year in range(year_first, year_last + 1):
-        if year_first == year_last:
-            file_element = SubElement(datafiles, "file")
-            file_element.text = (
-                f"./INPUT/RYF.{driver_src_var}.{year + 90}_{year + 91}.nc"
-            )
-        else:
-            for month in range(1, 13):  # Loop through months (January to December)
-                days_in_month = calendar.monthrange(year, month)[
-                    1
-                ]  # Get the number of days in the month
-                file_element = SubElement(datafiles, "file")
-                file_element.text = f"./INPUT/{year}/{era5_prefix}_era5_oper_sfc_{year}{month:02d}01-{year}{month:02d}{days_in_month}.nc"
+        file_element = SubElement(datafiles, "file")
+        file_element.text = rechunked_era5_input_file(era5_prefix, year)
 # Convert the XML to a nicely formatted string
 xml_str = minidom.parseString(tostring(root)).toprettyxml(indent="  ")
 
