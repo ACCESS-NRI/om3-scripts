@@ -66,10 +66,12 @@ STREAM_SPECS = [
     ("ERA5.V_10", "10v", [("v10", "Sa_v"), ("v10", "Sa_v10m")], "patch", 0),
 ]
 
+
 def rechunked_era5_input_file(era5_prefix, year):
     end_month_day = "0331" if year == 2026 else "1231"
     filename = f"{era5_prefix}_era5_oper_sfc_{year}0101-{year}{end_month_day}.nc"
     return f"./INPUT/{era5_prefix}/{filename}"
+
 
 if len(sys.argv) != 3:
     print("Usage: python generate_xml_datm_era5.py year_first year_last")
