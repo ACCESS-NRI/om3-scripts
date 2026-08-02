@@ -60,8 +60,9 @@ SRC_DIST = 1
 # Number of cells to spread to
 SPREAD_N = 75
 
-# Decay distance when calculating spreading weights
-FOLD = 15
+# Decay length (rad) when calculating spreading weights
+# spreading should decrease by a factor of e (2.718) every FOLD distance
+FOLD = 2 / 2 * np.pi
 
 # netcdf compression settings to use
 COMP_ENCODING = {"complevel": 1, "compression": "zlib"}
@@ -210,9 +211,11 @@ class Rof_Remapping_Weights:
         # select spread_i for spreading and no_spread_i for no spreading
 
         # Nospread points
+        # when using where on integers, set other=0 to avoid converting to floats
         nospread_i = self.mesh_ds.elementCount.where(
             self.spread_source_mask == False, other=0, drop=True
-        ).astype(int)
+        )
+
         row = target_mask_nospread_i[i_1[nospread_i, 0]]
 
         # Get the mesh element areas and adjust for area change between the
@@ -227,7 +230,8 @@ class Rof_Remapping_Weights:
 
             spread_i = self.mesh_ds.elementCount.where(
                 self.spread_source_mask, other=0, drop=True
-            ).astype(int)
+            )
+
             row = np.zeros((len(spread_i), SPREAD_N), dtype=int)
 
             for i in range(0, SPREAD_N):
@@ -268,7 +272,7 @@ class Rof_Remapping_Weights:
         weights_ds["S"] = xr.DataArray(data=S, dims="n_s")
 
         # Remove zero weights
-        weights_ds = weights_ds.where(weights_ds["S"] != 0, drop=True)
+        weights_ds = weights_ds.where(weights_ds["S"] != 0, other=0, drop=True)
 
         # add global attributes
         weights_ds.attrs = {

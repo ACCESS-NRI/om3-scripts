@@ -269,6 +269,28 @@ def test_regrid_conservation(data, mesh_in, mesh_out, weights_file, mom_grid):
             )
 
 
+@pytest.mark.parametrize("weights_file", [False, True], indirect=True)
+def test_dtypes(weights_file):
+    """
+    Confirm datatypes
+    """
+    ds = xr.open_dataset(weights_file["path"])
+
+    assert np.issubdtype(ds["col"].dtype, np.integer)
+    assert np.issubdtype(ds["row"].dtype, np.integer)
+    assert np.issubdtype(ds["S"].dtype, np.floating)
+
+
+@pytest.mark.parametrize("weights_file", [False, True], indirect=True)
+def test_weights(weights_file):
+    """
+    Confirm zero weights are removed
+    """
+    ds = xr.open_dataset(weights_file["path"])
+
+    assert (ds["S"] != 0).all()
+
+
 @pytest.mark.parametrize("spread", ["True", "False"])
 def test___init__(mesh_out, mom_grid, weights_path, spread):
     """
