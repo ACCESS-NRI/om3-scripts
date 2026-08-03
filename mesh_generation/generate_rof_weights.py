@@ -60,9 +60,9 @@ SRC_DIST = 1
 # Number of cells to spread to
 SPREAD_N = 75
 
-# Decay length (rad) when calculating spreading weights
+# Decay length (deg) when calculating spreading weights
 # spreading should decrease by a factor of e (2.718) every FOLD distance
-FOLD = 2 / 2 * np.pi
+FOLD = 2
 
 # netcdf compression settings to use
 COMP_ENCODING = {"complevel": 1, "compression": "zlib"}
@@ -240,7 +240,7 @@ class Rof_Remapping_Weights:
             new_area = area[row]
 
             # Exponential weights
-            w = np.exp(-dist_N[spread_i] / FOLD)
+            w = np.exp(-dist_N[spread_i] / np.deg2rad(FOLD))
 
             area_frac = [area / new_area[i] for i, area in enumerate(area[spread_i])]
 
