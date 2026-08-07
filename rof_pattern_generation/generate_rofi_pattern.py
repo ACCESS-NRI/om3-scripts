@@ -190,7 +190,7 @@ def main():
         masking_depth=regrid.args.masking_depth,
     )
 
-    # apply a smoothing
+    # apply a spatial smoothing
     smoothed = forcing_regrid_glob.map(
         lambda da: xr.apply_ufunc(
             uniform_filter,
@@ -198,7 +198,7 @@ def main():
             kwargs={
                 "size": (1, 5, 5),
                 "mode": ("nearest", "nearest", "wrap"),
-            },  # time, x, y
+            },  # time, y, x
             dask="parallelized",
             output_dtypes=[da.dtype],
         ).clip(min=0)
