@@ -30,6 +30,7 @@ import os
 import sys
 from copy import copy
 from sklearn.neighbors import BallTree
+from scipy.ndimage import uniform_filter
 from xesmf.util import cell_area
 import xarray as xr
 import numpy as np
@@ -47,8 +48,8 @@ from mesh_generation.generate_mesh import mom6_mask_detection
 DAY_IN_MONTH = [15.5, 45, 74.5, 105, 135.5, 166, 196.5, 227.5, 258, 288.5, 319, 349.5]
 
 # source data to regrid
-AQ_MELT_PATTERN = "/g/data/av17/access-nri/OM3/Mankoff_2025_V9/AQ_iceberg_melt.nc"
-GL_MELT_PATTERN = "/g/data/av17/access-nri/OM3/Mankoff_2025_V9/GL_iceberg_melt.nc"
+AQ_MELT_PATTERN = "/g/data/av17/access-nri/OM3/Mankoff_2025_V11/AQ_iceberg_melt.nc"
+GL_MELT_PATTERN = "/g/data/av17/access-nri/OM3/Mankoff_2025_V11/GL_iceberg_melt.nc"
 
 # attributes to copy from source data
 ATTRS = [
@@ -175,6 +176,21 @@ def main():
         regrid.forcing_src = regrid.forcing_src.drop_vars(
             ["region_map", "region_map_expanded"]
         ).sum("region")[["melt"]]
+
+        # apply a spatial smoothing
+        regrid.forcing_src = regrid.forcing_src.map(
+            lambda da: xr.apply_ufunc(
+                uniform_filter,
+                da,
+                kwargs={
+                    "size": (1, 3, 3),
+                    "mode": ("nearest", "nearest", "wrap"),
+                },  # time, y, x
+                dask="parallelized",
+                output_dtypes=[da.dtype],
+            ).clip(min=0)
+        )
+
         regrid.regrid_forcing()
 
     # combine two regridding results
