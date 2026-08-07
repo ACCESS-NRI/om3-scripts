@@ -75,11 +75,11 @@ def parse_args():
     parser.add_argument("year_first", type=int)
     parser.add_argument("year_last", type=int)
     parser.add_argument(
-        "--input-root",
+        "--input-base",
         type=Path,
         required=True,
         help=(
-            "Root directory containing ERA5 stream subdirectories. This is used "
+            "Base directory containing ERA5 data in subdirectories. This is used "
             "only to discover filenames; XML datafile paths are still written "
             "relative to ./INPUT for payu staging."
         ),
@@ -150,7 +150,7 @@ for stream_name, era5_prefix, datavar_pairs, mapalgo, offset_seconds in STREAM_S
     SubElement(stream_info, "tintalgo").text = "linear"
 
     for year in range(year_first, year_last + 1):
-        for input_file in era5_input_files(args.input_root, era5_prefix, year):
+        for input_file in era5_input_files(args.input_base, era5_prefix, year):
             file_element = SubElement(datafiles, "file")
             file_element.text = input_file
 # Convert the XML to a nicely formatted string
