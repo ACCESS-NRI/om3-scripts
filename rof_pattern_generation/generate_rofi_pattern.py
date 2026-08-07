@@ -176,6 +176,21 @@ def main():
         regrid.forcing_src = regrid.forcing_src.drop_vars(
             ["region_map", "region_map_expanded"]
         ).sum("region")[["melt"]]
+
+        # apply a spatial smoothing
+        regrid.forcing_src = regrid.forcing_src.map(
+            lambda da: xr.apply_ufunc(
+                uniform_filter,
+                da,
+                kwargs={
+                    "size": (1, 3, 3),
+                    "mode": ("nearest", "nearest", "wrap"),
+                },  # time, y, x
+                dask="parallelized",
+                output_dtypes=[da.dtype],
+            ).clip(min=0)
+        )
+
         regrid.regrid_forcing()
 
     # combine two regridding results
@@ -190,22 +205,10 @@ def main():
         masking_depth=regrid.args.masking_depth,
     )
 
-    # apply a spatial smoothing
-    smoothed = forcing_regrid_glob.map(
-        lambda da: xr.apply_ufunc(
-            uniform_filter,
-            da,
-            kwargs={
-                "size": (1, 5, 5),
-                "mode": ("nearest", "nearest", "wrap"),
-            },  # time, y, x
-            dask="parallelized",
-            output_dtypes=[da.dtype],
-        ).clip(min=0)
-    )
-
     # After doing the regridding, map any runoff on land cells into the ocean
-    weights_da = move_runoff_on_land(regrid.grid_dest, mask, smoothed["melt"])
+    weights_da = move_runoff_on_land(
+        regrid.grid_dest, mask, forcing_regrid_glob["melt"]
+    )
 
     weights_ds = weights_da.to_dataset(name="pattern_Forr_rofi")
 
