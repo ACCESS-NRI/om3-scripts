@@ -33,7 +33,6 @@ from datetime import datetime
 
 import numpy as np
 import xarray as xr
-import cf_xarray as cfxr
 import pandas as pd
 
 from pathlib import Path
