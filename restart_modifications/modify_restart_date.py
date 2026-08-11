@@ -104,9 +104,15 @@ def main():
     new_str = args.new_date.isoformat()
 
     rpointer_files = sorted(glob(os.path.join(args.input_dir, "rpointer.*")))
-    if any(os.path.basename(f) == "rpointer.wav" for f in rpointer_files):
+    ww3_files = [f for f in restart_files if os.path.basename(f).split(".")[1] == "ww3"]
+    has_rpointer_wav = any(
+        os.path.basename(f) == "rpointer.wav" for f in rpointer_files
+    )
+    if ww3_files or has_rpointer_wav:
         raise RuntimeError(
-            f"rpointer.wav found in {args.input_dir} - WW3 restarts are not handled by this script"
+            f"ww3 restart file(s) found in {args.input_dir}: "
+            f"{[os.path.basename(f) for f in ww3_files] or ['rpointer.wav']} - "
+            "WW3 restarts are not handled by this script"
         )
 
     os.makedirs(args.output_dir, exist_ok=True)
