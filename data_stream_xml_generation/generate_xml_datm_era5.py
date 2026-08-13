@@ -112,7 +112,7 @@ year_align = year_first
 root = Element("file", id="stream", version="2.0")
 
 # Obtain metadata
-metadata_info = get_provenance_metadata()
+metadata_info = get_provenance_metadata(write_readme_file=False)
 
 # Add metadata
 metadata = SubElement(root, "metadata")

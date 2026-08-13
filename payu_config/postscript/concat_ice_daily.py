@@ -134,7 +134,7 @@ class Concat_Ice_Daily:
         del daily_ds.attrs["comment3"]
 
         # Add some info about how the file was generated
-        daily_ds.attrs |= get_provenance_metadata()
+        daily_ds.attrs |= get_provenance_metadata(write_readme_file=False)
 
         self.directory = directory
         self.daily_ds = daily_ds
