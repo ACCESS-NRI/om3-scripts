@@ -94,7 +94,9 @@ def main(input_path, variable_to_smooth, output_file):
     out_ds["time"] = out_ds.time.assign_attrs({"modulo": " "})
 
     # Obtain metadata
-    out_ds = out_ds.assign_attrs(get_provenance_metadata(file_paths))
+    out_ds = out_ds.assign_attrs(
+        get_provenance_metadata(file_paths, output_filename=output_file)
+    )
 
     # Save
     out_ds[variable_to_smooth].encoding.setdefault(

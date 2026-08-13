@@ -278,7 +278,7 @@ def main():
 
     # Add provenance metadata and MD5 hashes for input files.
     input_files = [args.hgrid_file, args.topog_file]
-    global_attrs = get_provenance_metadata(input_files)
+    global_attrs = get_provenance_metadata(input_files, output_filename=args.output)
     tideamp.attrs.update(global_attrs)
 
     tideamp.to_netcdf(args.output, unlimited_dims=["time"])

@@ -129,11 +129,15 @@ def main():
         match component:
             case "cpl":
                 rewrite_cpl_restart(
-                    dst, args.new_date, get_provenance_metadata(input_files=[src])
+                    dst,
+                    args.new_date,
+                    get_provenance_metadata(input_files=[src], output_filename=dst),
                 )
             case "cice":
                 rewrite_cice_restart(
-                    dst, args.new_date, get_provenance_metadata(input_files=[src])
+                    dst,
+                    args.new_date,
+                    get_provenance_metadata(input_files=[src], output_filename=dst),
                 )
 
     for src in rpointer_files:

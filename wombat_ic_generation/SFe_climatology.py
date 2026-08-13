@@ -66,7 +66,9 @@ def main():
     output_filename = args.output_filename
 
     # Obtain metadata
-    history_attrs = get_provenance_metadata(input_files=[input_filename])
+    history_attrs = get_provenance_metadata(
+        input_files=[input_filename], output_filename=output_filename
+    )
 
     # Load the input data
     ds = xr.open_dataset(input_filename).compute()

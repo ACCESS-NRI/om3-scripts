@@ -148,7 +148,7 @@ def main():
     chl.time.attrs["long_name"] = "Time"
     chl.time.attrs["standard_name"] = "time"
     chl.time.attrs["axis"] = "T"
-    chl.attrs |= get_provenance_metadata(input_files)
+    chl.attrs |= get_provenance_metadata(input_files, output_filename=output_filename)
     comp = dict(zlib=True, complevel=4)
     encoding = {var: comp for var in chl.data_vars}
     # Time coords should be double type according for CF conventions

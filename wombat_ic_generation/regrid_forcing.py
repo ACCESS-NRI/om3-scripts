@@ -94,7 +94,7 @@ def main():
     forcing_regrid["ny"].encoding |= {"dtype": "float32"}
 
     # Obtain metadata
-    global_attrs = get_provenance_metadata()
+    global_attrs = get_provenance_metadata(output_filename=regrid.output_filename)
 
     forcing_regrid.attrs = forcing_regrid.attrs | global_attrs
 

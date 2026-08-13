@@ -461,7 +461,7 @@ def main():
         "inputFile": set(),
     }
     # Obtain metadata
-    global_attrs |= get_provenance_metadata()
+    global_attrs |= get_provenance_metadata(output_filename=output_file)
 
     xr.set_options(keep_attrs=True)
     template = _open_woa_data(

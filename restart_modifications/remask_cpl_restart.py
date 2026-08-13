@@ -162,7 +162,7 @@ def main():
             "title",
             "Coupler restart fields updated with land mask of modified bathymetry",
         )
-        f.setncatts(get_provenance_metadata())
+        f.setncatts(get_provenance_metadata(output_filename=args.output_file))
         f.setncattr(
             "mask_file",
             f"{os.path.abspath(args.mask_file)} (md5 hash: {md5sum(args.mask_file)})",

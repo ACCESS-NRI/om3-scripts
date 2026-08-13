@@ -280,7 +280,9 @@ class Rof_Remapping_Weights:
         }
 
         # add git info to history
-        weights_ds.attrs |= get_provenance_metadata([self.mesh_filename])
+        weights_ds.attrs |= get_provenance_metadata(
+            [self.mesh_filename], output_filename=self.weights_f
+        )
 
         # save (compressed)
         encoding = {}

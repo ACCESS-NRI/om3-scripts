@@ -204,10 +204,11 @@ for year1 in years:
             }
         )
 
-        # Add some info about how the file was generated
-        ryf.attrs |= get_provenance_metadata(input_files)
-
         outfile = "RYF.{}.{}_{}.nc".format(var, year1, year2)
+
+        # Add some info about how the file was generated
+        ryf.attrs |= get_provenance_metadata(input_files, output_filename=outfile)
+
         print("Writing ", outfile)
         ryf.to_netcdf(outfile)
 
