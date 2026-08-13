@@ -114,16 +114,11 @@ def get_email(file):
         return None
 
 
-def write_readme(output_dir, file, output_filename, input_files, history):
+def write_readme(output_dir, file, output_filename, input_files, history, licence=None):
     """
     Write a README.md to output_dir, following the ACCESS-NRI model-config-inputs
     template:
     https://github.com/ACCESS-NRI/model-config-inputs/blob/main/templates/README_template.md
-
-    Everything is filled in automatically: title and file list from output_filename,
-    contact details from the current user's git config, and links/relationships from
-    input_files. Fields with no sensible automatic value (licensing, other locations,
-    citation) are set to fixed defaults appropriate for ACCESS-NRI model input data.
     """
     contact_name = username(file)
     contact_email = get_email(file) or "[Email of data custodian]"
@@ -159,7 +154,7 @@ Institution: ACCESS-NRI
 
 ### Licensing/restrictions
 
-CC-BY-4.0
+{licence or "[List any licenses and/or restrictions placed on the data]"}
 
 ### Other locations
 
@@ -209,25 +204,19 @@ def get_provenance_metadata(
     output_dir=None,
     output_filename=None,
     write_readme_file=True,
+    licence=None,
 ):
     """
-    Return a dictionary with the provenance of the file being run. Warn if the
-    file is not pushed to the git upstream repository. Also writes a README.md
-    alongside the output (see write_readme), unless write_readme_file is False.
-
+    Return a dictionary with the provenance of the file being run and writes a README
     arguments:
         input_files: list of input files being used in the script being run (optional)
         runcmd: the command used to run the file, with any arguments. Optional -
             defaults to the python executable + input arguments
         output_dir: directory to write the accompanying README.md into. Optional -
             defaults to the current working directory
-        output_filename: name of the file being created (or list of names). Optional -
-            used as the README's title and file list
-        write_readme_file: whether to write the accompanying README.md. Optional -
-            defaults to True. Set to False when calling get_provenance_metadata
-            once per output file in a loop, and instead call write_readme once
-            after the loop with the full list of output/input files, so only one
-            README is written per output directory.
+        output_filename: name of the file being created (or list of names)
+        write_readme_file: whether to write the accompanying README.md
+        licence: license/restrictions to record in the README, e.g. "CC-BY-4.0"
     """
 
     file = os.path.abspath(sys.argv[0])  # script being run
@@ -269,6 +258,7 @@ def get_provenance_metadata(
             output_filename,
             input_files,
             attrs["history"],
+            licence=licence,
         )
 
     return attrs

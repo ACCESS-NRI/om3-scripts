@@ -113,6 +113,30 @@ def test_write_readme_basic(tmp_path, script_file, monkeypatch):
     # input files are listed with their md5 hash
     assert f"- {input_file} (md5 hash: {md5sum(str(input_file))})" in content
 
+    # licence defaults to a placeholder, not an assumed value
+    assert "[List any licenses and/or restrictions placed on the data]" in content
+
+
+def test_write_readme_licence(tmp_path, script_file, monkeypatch):
+    monkeypatch.setenv("USER", "testuser")
+    _init_repo(tmp_path, name="Git Name", email="test@example.com")
+    output_file = tmp_path / "output.nc"
+    output_file.write_text("output data")
+
+    readme_path = Path(
+        write_readme(
+            str(tmp_path),
+            str(script_file),
+            str(output_file),
+            None,
+            "hist",
+            licence="CC-BY-4.0",
+        )
+    )
+
+    content = readme_path.read_text()
+    assert "### Licensing/restrictions\n\nCC-BY-4.0" in content
+
 
 def test_write_readme_no_input_files(tmp_path, script_file, monkeypatch):
     monkeypatch.setenv("USER", "testuser")

@@ -116,7 +116,7 @@ def write_netcdf_file(output_filename, real_prop_z):
     zeta.long_name = "vertical grid depth at top and bottom of each cell"
     eddyfile.variables["zeta"][:] = real_prop_z_float64
     eddyfile.setncatts(
-        get_provenance_metadata(output_filename=output_filename)
+        get_provenance_metadata(output_filename=output_filename, licence="CC BY 4.0")
     )  # Obtain metadata
     eddyfile.close()
 

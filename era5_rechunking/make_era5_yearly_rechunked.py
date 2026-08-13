@@ -715,7 +715,11 @@ def _write_yearly_file(
             template.getncattr("history") if "history" in template.ncattrs() else ""
         )
         this_file = os.path.normpath(__file__)
-        provenance = get_provenance_metadata(runcmd=runcmd, output_filename=out_path)
+        provenance = get_provenance_metadata(
+            runcmd=runcmd,
+            output_filename=out_path,
+            licence="Licence to use Copernicus Products: https://apps.ecmwf.int/datasets/licences/copernicus/",
+        )
         new_history = (
             f"{now_iso} rechunked from [93,91,180] to [1,721,1440] using netCDF4; "
             f"{len(source_files)} monthly files decoded with their source packing and "

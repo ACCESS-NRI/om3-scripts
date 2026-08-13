@@ -93,7 +93,11 @@ def main():
 
     # Obtain metadata
     input_files = [co2_cmip_filename, co2_noaa_filename, hgrid_filename]
-    global_attrs = get_provenance_metadata(input_files, output_filename=output_filename)
+    global_attrs = get_provenance_metadata(
+        input_files,
+        output_filename=output_filename,
+        licence="CC BY 4.0; Public Domain",
+    )
 
     # Load the input data
     co2_cmip = xr.open_dataset(co2_cmip_filename, decode_cf=False).compute()

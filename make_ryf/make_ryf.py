@@ -206,8 +206,13 @@ for year1 in years:
 
         outfile = "RYF.{}.{}_{}.nc".format(var, year1, year2)
 
-        # Add some info about how the file was generated
-        ryf.attrs |= get_provenance_metadata(input_files, output_filename=outfile)
+        # Add some info about how the file was generated. JRA55-do input4MIPs data
+        # (jra55v1p4/jra55v1p6) is CC BY 4.0; the older ua8 v1-3 replica's license
+        # hasn't been verified, so it's left unset for that case.
+        licence = "CC BY 4.0" if source_data in ("jra55v1p4", "jra55v1p6") else None
+        ryf.attrs |= get_provenance_metadata(
+            input_files, output_filename=outfile, licence=licence
+        )
 
         print("Writing ", outfile)
         ryf.to_netcdf(outfile)

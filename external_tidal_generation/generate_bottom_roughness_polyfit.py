@@ -386,7 +386,7 @@ def main():
         runcmd = f"mpirun -n $PBS_NCPUS python3 {' '.join(sys.argv)} "
         input_files = [args.high_res_topo_file, args.hgrid_file, args.topog_file]
         global_attrs = get_provenance_metadata(
-            input_files, runcmd, output_filename=args.output
+            input_files, runcmd, output_filename=args.output, licence="Public Domain"
         )
 
         h2_out.attrs.update(global_attrs)

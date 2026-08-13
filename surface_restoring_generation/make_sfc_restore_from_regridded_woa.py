@@ -95,7 +95,9 @@ def main(input_path, variable_to_smooth, output_file):
 
     # Obtain metadata
     out_ds = out_ds.assign_attrs(
-        get_provenance_metadata(file_paths, output_filename=output_file)
+        get_provenance_metadata(
+            file_paths, output_filename=output_file, licence="Public Domain"
+        )
     )
 
     # Save

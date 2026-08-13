@@ -205,7 +205,9 @@ class BaseGrid:
             "created_by": f"{os.environ.get('USER')}",
         }
         ds.attrs |= get_provenance_metadata(
-            input_files=self.inputs, output_filename=output_filename
+            input_files=self.inputs,
+            output_filename=output_filename,
+            licence="CC BY 4.0",
         )
 
         self.mesh = ds

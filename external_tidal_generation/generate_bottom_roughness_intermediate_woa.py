@@ -845,7 +845,10 @@ def main():
             args.synbath_file,
         ]
         global_attrs = get_provenance_metadata(
-            input_files, runcmd, output_filename=args.woa_intermediate_file
+            input_files,
+            runcmd,
+            output_filename=args.woa_intermediate_file,
+            licence="Public Domain",
         )
 
         ds_woa_output.attrs.update(global_attrs)
