@@ -117,10 +117,12 @@ def main():
 
     os.makedirs(args.output_dir, exist_ok=True)
 
+    output_files = []
     for src in restart_files:
         fname = os.path.basename(src)
         new_fname = fname.replace(old_str, new_str)
         dst = os.path.join(args.output_dir, new_fname)
+        output_files.append(dst)
 
         # e.g. access-om3.cice.r.1959-01-01-00000.nc.0000 -> component "cice"
         component = fname.split(".")[1]
@@ -131,22 +133,35 @@ def main():
                 rewrite_cpl_restart(
                     dst,
                     args.new_date,
-                    get_provenance_metadata(input_files=[src], output_filename=dst),
+                    get_provenance_metadata(
+                        input_files=[src], output_filename=dst, write_readme_file=False
+                    ),
                 )
             case "cice":
                 rewrite_cice_restart(
                     dst,
                     args.new_date,
-                    get_provenance_metadata(input_files=[src], output_filename=dst),
+                    get_provenance_metadata(
+                        input_files=[src], output_filename=dst, write_readme_file=False
+                    ),
                 )
 
     for src in rpointer_files:
         fname = os.path.basename(src)
         dst = os.path.join(args.output_dir, fname)
+        output_files.append(dst)
         with open(src) as f:
             content = f.read()
         with open(dst, "w") as f:
             f.write(content.replace(old_str, new_str))
+
+    # Write a single README describing the whole restart folder, rather than one
+    # per restart file.
+    get_provenance_metadata(
+        input_files=restart_files,
+        output_dir=args.output_dir,
+        output_filename=output_files,
+    )
 
     print(f"\nModified restarts for {old_str} -> {new_str} in {args.output_dir}.")
 

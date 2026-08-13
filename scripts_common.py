@@ -204,12 +204,16 @@ Files in this dataset:
 
 
 def get_provenance_metadata(
-    input_files=None, runcmd=None, output_dir=None, output_filename=None
+    input_files=None,
+    runcmd=None,
+    output_dir=None,
+    output_filename=None,
+    write_readme_file=True,
 ):
     """
     Return a dictionary with the provenance of the file being run. Warn if the
     file is not pushed to the git upstream repository. Also writes a README.md
-    alongside the output (see write_readme).
+    alongside the output (see write_readme), unless write_readme_file is False.
 
     arguments:
         input_files: list of input files being used in the script being run (optional)
@@ -219,6 +223,11 @@ def get_provenance_metadata(
             defaults to the current working directory
         output_filename: name of the file being created (or list of names). Optional -
             used as the README's title and file list
+        write_readme_file: whether to write the accompanying README.md. Optional -
+            defaults to True. Set to False when calling get_provenance_metadata
+            once per output file in a loop, and instead call write_readme once
+            after the loop with the full list of output/input files, so only one
+            README is written per output directory.
     """
 
     file = os.path.abspath(sys.argv[0])  # script being run
@@ -253,9 +262,14 @@ def get_provenance_metadata(
     if input_files is not None:
         attrs["inputFile"] = get_provenance_input_files(input_files)
 
-    write_readme(
-        output_dir or os.getcwd(), file, output_filename, input_files, attrs["history"]
-    )
+    if write_readme_file:
+        write_readme(
+            output_dir or os.getcwd(),
+            file,
+            output_filename,
+            input_files,
+            attrs["history"],
+        )
 
     return attrs
 
