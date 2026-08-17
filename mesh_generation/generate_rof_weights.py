@@ -91,12 +91,15 @@ class Rof_Remapping_Weights:
     def __init__(
         self, mesh_filename, weights_filename, nx, ny, spread, input_mesh_filename=None
     ):
-        # We need to generate remapping weights for use in the mediator, such that the overall volume of runoff is conserved
-        # and no runoff is mapped onto land cells. Inside the mediator,
+        # We need to generate remapping weights for use in the mediator, such that
+        # the overall volume of runoff is conserved and no runoff is mapped onto
+        # land cells. Inside the mediator,
         # For OM3: the grid doesn't change as we run the mediator with
-        # the ocean grid (the DROF component does the remapping from JRA grid to mediator grid). Therefore input_mesh_filename defaults to mesh_filename
+        # the ocean grid (the DROF component does the remapping from JRA grid to
+        # mediator grid). Therefore input_mesh_filename defaults to mesh_filename
         # For CM3, the input_mesh_filename can be set to a different mesh if
-        # the source (unmasked, runoff-providing) grid  (aka the UM) differs from the destination (masked, ocean) grid.
+        # the source (unmasked, runoff-providing) grid  (aka the UM) differs from
+        # the destination (masked, ocean) grid.
 
         self.mesh_filename = mesh_filename
         self.mesh_ds = xr.open_dataset(mesh_filename)
@@ -114,8 +117,8 @@ class Rof_Remapping_Weights:
 
     def target_masks(self):
         """
-        create masks for where runoff can be placed when being placed at coast (nospread)
-        or being spread
+        create masks for where runoff can be placed when being placed at coast
+        (nospread) or being spread
         """
         # make new mask of land plus one adjacent cell of ocean
         ocn_mask = self.mesh_ds.elementMask.values == 1
@@ -184,7 +187,7 @@ class Rof_Remapping_Weights:
         )
 
         # Using the Trees, look up the nearest ocean cell to every source grid cell.
-        # input is all cells of the (possibly separate) input/source mesh
+        # input is all cells of the input/source mesh
         in_coords_rad = np.deg2rad(
             self.input_mesh_ds.centerCoords.isel(coordDim=[1, 0])
         )
@@ -320,14 +323,16 @@ def gen_rof_weights(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Create an remapping weights to transfer runoff from unmasked mesh to masked mesh using ESMF mesh file."
+        description="Create an remapping weights to transfer runoff from unmasked "
+        "mesh to masked mesh using ESMF mesh file."
     )
 
     parser.add_argument(
         "--mesh_filename",
         type=str,
         required=True,
-        help="The path to the mesh file specifying the model (destination) grid and land mask.",
+        help="The path to the mesh file specifying the model (destination) grid "
+        "and land mask.",
     )
     parser.add_argument(
         "--input_mesh_filename",
