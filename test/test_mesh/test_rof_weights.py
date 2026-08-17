@@ -155,10 +155,13 @@ def mesh_out(mom_grid, mod_tmp_path: Path):
 def mesh_in_um(mod_tmp_path: Path):
     """
     A um mesh. We generate a mask here to help with placing test data (the mask
-    isn't part of a um mesh normally)
+    isn't part of a um mesh normally). nlat/nlon (n16 resolution) is chosen so at
+    least one cell falls within SPREAD_POINTS' SRC_DIST of a real spread point
+    (Lena), so spread=True tests actually exercise the spreading code path here -
+    a coarser mesh may have no cells close enough to any spread point to trigger it.
     """
     mesh_in_path = mod_tmp_path / "mesh_in_diff_res.nc"
-    nlat, nlon = 10, 16
+    nlat, nlon = 24, 32
     create_um_mesh(nlat, nlon, str(mesh_in_path))
 
     result = mesh_creator(str(mesh_in_path))
