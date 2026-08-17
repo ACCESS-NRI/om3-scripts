@@ -125,7 +125,7 @@ class BaseGrid:
 
         self.mesh = None
 
-    def create_mesh(self, wrap_lons=True):
+    def create_mesh(self, wrap_lons=True, output_filename=None):
         """
         Create the mesh as an xarray Dataset
 
@@ -133,6 +133,8 @@ class BaseGrid:
         ----------
         wrap_lons: boolean, optional
             If True, wrap longitude values into the range between 0 and 360
+        output_filename: str, optional
+            Path the mesh will be written to. Used only for the accompanying README.
         """
 
         if wrap_lons:
@@ -202,7 +204,11 @@ class BaseGrid:
             "timeGenerated": f"{datetime.now()}",
             "created_by": f"{os.environ.get('USER')}",
         }
-        ds.attrs |= get_provenance_metadata(input_files=self.inputs)
+        ds.attrs |= get_provenance_metadata(
+            input_files=self.inputs,
+            output_filename=output_filename,
+            licence="CC BY 4.0",
+        )
 
         self.mesh = ds
 
@@ -588,7 +594,9 @@ def main():
         masking_depth,
     )
 
-    mesh.create_mesh(wrap_lons=wrap_lons).write(mesh_filename)
+    mesh.create_mesh(wrap_lons=wrap_lons, output_filename=mesh_filename).write(
+        mesh_filename
+    )
 
 
 if __name__ == "__main__":

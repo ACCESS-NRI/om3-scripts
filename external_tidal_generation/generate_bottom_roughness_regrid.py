@@ -397,7 +397,9 @@ def main():
 
     # Add provenance metadata and MD5 hashes for input files.
     input_files = [args.hgrid_file, args.topog_file, args.woa_intermediate_file]
-    global_attrs = get_provenance_metadata(input_files)
+    global_attrs = get_provenance_metadata(
+        input_files, output_filename=args.output_file, licence="Public Domain"
+    )
     regrid_depth_var.attrs.update(global_attrs)
 
     output_path = Path(args.output_file)

@@ -97,15 +97,126 @@ def username(file):
     return name
 
 
-def get_provenance_metadata(input_files=None, runcmd=None):
+def get_email(file):
     """
-    Return a dictionary with the provenance of the file being run. Warn if the
-    file is not pushed to the git upstream repository.
+    Return the git user.email configured for the repo containing file, or None if
+    not under git version control or no email is configured.
+    """
+    dirname = os.path.dirname(file)
 
+    try:
+        return (
+            subprocess.check_output(["git", "-C", dirname, "config", "user.email"])
+            .decode("ascii")
+            .strip()
+        )
+    except subprocess.CalledProcessError:
+        return None
+
+
+def write_readme(output_dir, file, output_filename, input_files, history, licence=None):
+    """
+    Write a README.md to output_dir, following the ACCESS-NRI model-config-inputs
+    template:
+    https://github.com/ACCESS-NRI/model-config-inputs/blob/main/templates/README_template.md
+    """
+    contact_name = username(file)
+    contact_email = get_email(file) or "[Email of data custodian]"
+
+    if isinstance(output_filename, str):
+        output_filenames = [output_filename]
+    else:
+        output_filenames = list(output_filename) if output_filename else []
+
+    title = ", ".join(os.path.basename(f) for f in output_filenames)
+    file_list = "\n".join(f"- {os.path.abspath(f)}" for f in output_filenames)
+    links = (
+        "\n".join(
+            f"- {os.path.abspath(f)} (md5 hash: {md5sum(f)})" for f in input_files
+        )
+        if input_files
+        else "N/A"
+    )
+
+    readme = f"""This readme file was generated on {datetime.now().strftime('%Y-%m-%d')} by {contact_name}
+
+# {title}
+
+## Contact(s)
+
+Name: {contact_name}
+
+Email: {contact_email}
+
+Institution: ACCESS-NRI
+
+## Data Access and Sharing
+
+### Licensing/restrictions
+
+{licence or "[List any licenses and/or restrictions placed on the data]"}
+
+### Other locations
+
+N/A
+
+### Links/relationships
+
+Other files used to prepare this data:
+
+{links}
+
+### Recommended citation
+
+N/A
+
+## Data and Files
+
+### File List
+
+Files in this dataset:
+
+{file_list}
+
+## Methodological information
+
+{history}
+"""
+
+    # give the README a unique name based on the output files
+    if output_filenames:
+        readme_name = (
+            f"{os.path.splitext(os.path.basename(output_filenames[0]))[0]}.README.md"
+        )
+    else:
+        readme_name = "README.md"
+
+    readme_path = os.path.join(output_dir, readme_name)
+    with open(readme_path, "w") as f:
+        f.write(readme)
+
+    return readme_path
+
+
+def get_provenance_metadata(
+    input_files=None,
+    runcmd=None,
+    output_dir=None,
+    output_filename=None,
+    write_readme_file=True,
+    licence=None,
+):
+    """
+    Return a dictionary with the provenance of the file being run and writes a README
     arguments:
         input_files: list of input files being used in the script being run (optional)
         runcmd: the command used to run the file, with any arguments. Optional -
             defaults to the python executable + input arguments
+        output_dir: directory to write the accompanying README.md into. Optional -
+            defaults to the current working directory
+        output_filename: name of the file being created (or list of names)
+        write_readme_file: whether to write the accompanying README.md
+        licence: license/restrictions to record in the README, e.g. "CC-BY-4.0"
     """
 
     file = os.path.abspath(sys.argv[0])  # script being run
@@ -139,6 +250,16 @@ def get_provenance_metadata(input_files=None, runcmd=None):
 
     if input_files is not None:
         attrs["inputFile"] = get_provenance_input_files(input_files)
+
+    if write_readme_file:
+        write_readme(
+            output_dir or os.getcwd(),
+            file,
+            output_filename,
+            input_files,
+            attrs["history"],
+            licence=licence,
+        )
 
     return attrs
 

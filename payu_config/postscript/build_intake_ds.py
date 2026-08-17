@@ -39,7 +39,7 @@ def description():
         warn(f"{METADATA_FILENAME} not found in config folder")
         uuid = False
 
-    provenance = get_provenance_metadata()
+    provenance = get_provenance_metadata(write_readme_file=False)
 
     if uuid:
         description = f"intake-esm datastore for experiment {uuid}, in folder {os.getcwd()}. {provenance['history']}."

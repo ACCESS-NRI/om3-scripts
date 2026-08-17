@@ -233,7 +233,11 @@ def main():
     global_attrs |= {
         "description": "Mankoff 2025 iceberg spreading climatology remapped onto an ACCESS-OM3 grid",
     }
-    global_attrs |= get_provenance_metadata(input_files)
+    global_attrs |= get_provenance_metadata(
+        input_files,
+        output_filename=regrid.output_filename,
+        licence="CC BY 4.0",
+    )
 
     weights_ds.attrs = weights_ds.attrs | global_attrs
 
