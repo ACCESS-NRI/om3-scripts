@@ -9,13 +9,14 @@ from matplotlib import pyplot as plt
 
 import xarray as xr
 import numpy as np
-import esmpy
 import regionmask
+import esmpy
 from scipy.ndimage import binary_dilation
 from copy import copy
 
 from mesh_generation.generate_mesh import MomSuperGrid
 from mesh_generation.generate_rof_weights import gen_rof_weights, Rof_Remapping_Weights
+from mesh_generation.generate_um_mesh import create_um_mesh
 
 # create test grids at 4 degrees
 # 4 degress is the lowest tested in ocean_model_grid_generator
@@ -90,7 +91,7 @@ def mesh_creator(filename: str):
 
 
 @pytest.fixture(scope="module")
-def mesh_in(mom_grid, mod_tmp_path: Path):
+def mesh_in_mom(mom_grid, mod_tmp_path: Path):
     """
     For the input mesh, use an unmasked mesh
     """
@@ -120,15 +121,20 @@ def mesh_out(mom_grid, mod_tmp_path: Path):
     test_grid = MomSuperGrid(mom_grid.path)
 
     # Generate a rough landmask
-    mask = regionmask.defined_regions.natural_earth_v5_1_2.ocean_basins_50.mask(
-        np.reshape(test_grid.x_centres, (mom_grid.ny, mom_grid.nx)),
-        np.reshape(test_grid.y_centres, (mom_grid.ny, mom_grid.nx)),
-    ).notnull()
-    test_grid.mask = mask.astype(np.int8).values.flatten()
+    mask_2d = (
+        regionmask.defined_regions.natural_earth_v5_1_2.ocean_basins_50.mask(
+            np.reshape(test_grid.x_centres, (mom_grid.ny, mom_grid.nx)),
+            np.reshape(test_grid.y_centres, (mom_grid.ny, mom_grid.nx)),
+        )
+        .notnull()
+        .astype(np.int8)
+        .values
+    )
+    test_grid.mask = mask_2d.flatten()
 
     # Save a plot of the landmask for debugging
     plt.figure()
-    plt.pcolor(mask)
+    plt.pcolor(mask_2d)
     plt.colorbar()
     plt.title("Test mask")
     plt.savefig("test_mask.png")
@@ -138,47 +144,62 @@ def mesh_out(mom_grid, mod_tmp_path: Path):
 
     result = mesh_creator(str(mesh_out_path))
     result["mom_super_grid"] = test_grid
+    result["mask_2d"] = mask_2d
 
     yield result
 
     mesh_out_path.unlink()
 
 
-def make_masked_data(data, mesh_out, mom_grid):
+@pytest.fixture(scope="module")
+def mesh_in_um(mod_tmp_path: Path):
+    """
+    A um mesh. We generate a mask here to help with placing test data (the mask
+    isn't part of a um mesh normally)
+    """
+    mesh_in_path = mod_tmp_path / "mesh_in_diff_res.nc"
+    nlat, nlon = 10, 16
+    create_um_mesh(nlat, nlon, str(mesh_in_path))
+
+    result = mesh_creator(str(mesh_in_path))
+    result["nlat"] = nlat
+    result["nlon"] = nlon
+    result["centerCoords"] = xr.open_dataset(mesh_in_path).centerCoords.values
+
+    lon = result["centerCoords"][:, 0].reshape((nlat, nlon))
+    lat = result["centerCoords"][:, 1].reshape((nlat, nlon))
+    result["mask_2d"] = (
+        regionmask.defined_regions.natural_earth_v5_1_2.ocean_basins_50.mask(lon, lat)
+        .notnull()
+        .values.astype(np.int8)
+    )
+
+    yield result
+
+    mesh_in_path.unlink()
+
+
+def make_masked_data(data, mask_2d):
     match data:
-        # This is where runoff exist on the input mesh
+        # This is where runoff exists on the input mesh
         case "All":
-            mask = 1e10
+            return 1e10
         case "None":
-            mask = 0
+            return 0
         case "Ocean":
-            mask = mesh_out["mom_super_grid"].mesh.elementMask * 1e20
+            return mask_2d.flatten() * 1e20
         case "Land":
-            mask = 1e-20 * (mesh_out["mom_super_grid"].mesh.elementMask == 0).astype(
-                int
-            )
+            return 1e-20 * (mask_2d == 0).flatten().astype(int)
         case "Ocean_Touching_Land":
-            mask_2d = np.reshape(
-                mesh_out["mom_super_grid"].mesh.elementMask.values,
-                (mom_grid.ny, mom_grid.nx),
-            )
             # make new mask of land plus one adjacent cell of ocean
             land_neighbours = binary_dilation(mask_2d == 0)
             # target for runoff is ocean cells which are adjacent land
-            mask = ((land_neighbours & mask_2d) == 1).flatten()
+            return ((land_neighbours & mask_2d) == 1).flatten()
         case "Ocean_Not_Touching_Land":
-            mask_2d = np.reshape(
-                mesh_out["mom_super_grid"].mesh.elementMask.values,
-                (mom_grid.ny, mom_grid.nx),
-            )
-            # make new mask of land plus one adjacent cell of ocean
             land_neighbours = binary_dilation(mask_2d == 0)
-            # target for runoff is ocean cells which are adjacent land
-            mask = (((land_neighbours == 0) & mask_2d) == 1).flatten()
+            return (((land_neighbours == 0) & mask_2d) == 1).flatten()
         case _:
             raise ValueError(f"{data} is not an implement mask type")
-
-    return mask
 
 
 @pytest.fixture(scope="module")
@@ -186,21 +207,47 @@ def weights_path(mod_tmp_path: Path) -> Path:
     return mod_tmp_path / "drof_remap_weights.nc"
 
 
+@pytest.fixture(scope="module", params=["mesh_in_mom", "mesh_in_um"])
+def mesh_in(request, mesh_out):
+    """
+    Resolves to either mesh_in_mom or mesh_in_um.
+    """
+    name = request.param
+    result = {**request.getfixturevalue(name), "name": name}
+
+    if name == "mesh_in_mom":
+        result["mask_2d"] = mesh_out["mask_2d"]
+        result["input_mesh_filename"] = None  #  Default is input_mesh == output_mesh
+    else:
+        result["input_mesh_filename"] = result["path"]
+
+    return result
+
+
 @pytest.fixture(scope="module")
-def weights_file(mom_grid, mesh_out, weights_path: Path, request):
+def weights_file(mom_grid, mesh_out, mesh_in, mod_tmp_path: Path, request):
+    """
+    Generate a weights file for the source mesh selected by mesh_in,
+    parametrized separately by spread.
+    """
+    spread = request.param
+    mesh_in_name = mesh_in["name"]
+
+    weights_path = mod_tmp_path / f"drof_remap_weights_{mesh_in_name}_{spread}.nc"
 
     gen_rof_weights(
         mesh_out["path"],
         str(weights_path),
         mom_grid.nx,
         mom_grid.ny,
-        spread=request.param,
+        spread=spread,
+        input_mesh_filename=mesh_in["input_mesh_filename"],
     )
 
     if not weights_path.exists():
         raise RuntimeError("drof remap weights not created")
 
-    yield {"path": str(weights_path), "spread": request.param}
+    yield {"path": str(weights_path), "spread": spread}
 
     weights_path.unlink()
 
@@ -214,7 +261,7 @@ def weights_file(mom_grid, mesh_out, weights_path: Path, request):
     ["All", "None", "Ocean", "Land", "Ocean_Touching_Land", "Ocean_Not_Touching_Land"],
 )
 @pytest.mark.parametrize("weights_file", [False, True], indirect=True)
-def test_regrid_conservation(data, mesh_in, mesh_out, weights_file, mom_grid):
+def test_regrid_conservation(data, weights_file, mesh_in, mesh_out, mom_grid):
     """
     For some provided meshes, and weights file, confirm that the weights are conservative
     """
@@ -224,7 +271,8 @@ def test_regrid_conservation(data, mesh_in, mesh_out, weights_file, mom_grid):
     fld_out = mesh_out["fld"]
     area_out = mesh_out["area"]
 
-    fld_in.data[:] = make_masked_data(data, mesh_out, mom_grid)
+    out_mask_2d = mesh_out["mask_2d"]
+    fld_in.data[:] = make_masked_data(data, mesh_in["mask_2d"])
 
     # for unclear reasons, we need to zero the output field before populating it
     # it looks like cells which are not destinations in remapping can introduce rounding error
@@ -236,8 +284,8 @@ def test_regrid_conservation(data, mesh_in, mesh_out, weights_file, mom_grid):
     plt.figure()
     plt.pcolor(np.reshape(fld_out.data, (mom_grid.ny, mom_grid.nx)))
     plt.colorbar()
-    plt.title(f"Runoff cells {data}")
-    plt.savefig(f"Runoff cells {data}.png")
+    plt.title(f"Runoff cells {data} {mesh_in['name']}")
+    plt.savefig(f"Runoff cells {data} {mesh_in['name']}.png")
 
     print(f"Total before Regrid : {np.sum(fld_in.data*area_in)}")
     print(f"Total after Regrid : {np.sum(fld_out.data*area_out)}")
@@ -250,7 +298,7 @@ def test_regrid_conservation(data, mesh_in, mesh_out, weights_file, mom_grid):
     if not weights_file["spread"]:
 
         # In no spread case, all runoff enters cells touching land
-        test_target = make_masked_data("Ocean_Touching_Land", mesh_out, mom_grid) > 0
+        test_target = make_masked_data("Ocean_Touching_Land", out_mask_2d) > 0
         np.testing.assert_array_equal(
             test_target & (fld_out.data > 0), (fld_out.data > 0)
         )
@@ -258,15 +306,48 @@ def test_regrid_conservation(data, mesh_in, mesh_out, weights_file, mom_grid):
     if weights_file["spread"]:
 
         # All runoff in ocean, therefore land & zero runoff is still land
-        land_mask = make_masked_data("Land", mesh_out, mom_grid) > 0
+        land_mask = make_masked_data("Land", out_mask_2d) > 0
         np.testing.assert_array_equal(land_mask & (fld_out.data <= 0), land_mask)
         # Something has been spread
         # if source data is "Ocean_Not_Touching_Land", result depends on size of SRC_DIST
         if data != "None" and data != "Ocean_Not_Touching_Land":
             assert np.any(
                 (fld_out.data > 0)
-                & (make_masked_data("Ocean_Not_Touching_Land", mesh_out, mom_grid) > 0)
+                & (make_masked_data("Ocean_Not_Touching_Land", out_mask_2d) > 0)
             )
+
+
+def test___init___different_meshes(mesh_out, mesh_in_um, mom_grid, weights_path):
+    """
+    Confirm input_mesh_filename/input_mesh_ds are set correctly when a different
+    input_mesh_filename is provided, and that it defaults to mesh_filename otherwise.
+    """
+
+    test_weights = Rof_Remapping_Weights(
+        mesh_out["path"],
+        str(weights_path),
+        mom_grid.nx,
+        mom_grid.ny,
+        spread=False,
+        input_mesh_filename=mesh_in_um["path"],
+    )
+
+    assert test_weights.input_mesh_filename == mesh_in_um["path"]
+    assert test_weights.input_mesh_ds.equals(xr.open_dataset(mesh_in_um["path"]))
+
+
+def test___init___same_meshes(mesh_out, mom_grid, weights_path):
+    """
+    Confirm input_mesh_filename/input_mesh_ds are set correctly when a different
+    input_mesh_filename is provided, and that it defaults to mesh_filename otherwise.
+    """
+
+    default_weights = Rof_Remapping_Weights(
+        mesh_out["path"], str(weights_path), mom_grid.nx, mom_grid.ny, spread=False
+    )
+
+    assert default_weights.input_mesh_filename == mesh_out["path"]
+    assert default_weights.input_mesh_ds.equals(xr.open_dataset(mesh_out["path"]))
 
 
 @pytest.mark.parametrize("weights_file", [False, True], indirect=True)
@@ -291,7 +372,7 @@ def test_weights(weights_file):
     assert (ds["S"] != 0).all()
 
 
-@pytest.mark.parametrize("spread", ["True", "False"])
+@pytest.mark.parametrize("spread", [True, False])
 def test___init__(mesh_out, mom_grid, weights_path, spread):
     """
     Confirm the init function assigns the variables needed for later steps
@@ -309,7 +390,7 @@ def test___init__(mesh_out, mom_grid, weights_path, spread):
     assert test_weights.spread == spread
 
 
-@pytest.mark.parametrize("spread", ["False", "True"])
+@pytest.mark.parametrize("spread", [False, True])
 def test_target_masks(mesh_out, mom_grid, weights_path, spread):
     """
     Confirm that the target masks is the whole ocean for points being spread,
@@ -328,7 +409,7 @@ def test_target_masks(mesh_out, mom_grid, weights_path, spread):
 
     np.testing.assert_array_equal(
         test_weights.target_mask_nospread,
-        make_masked_data("Ocean_Touching_Land", mesh_out, mom_grid),
+        make_masked_data("Ocean_Touching_Land", mesh_out["mask_2d"]),
     )
 
 

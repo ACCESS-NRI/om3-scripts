@@ -229,7 +229,7 @@ class Rof_Remapping_Weights:
         # Get the mesh element areas and adjust for area change between the
         # source cell (i) and destination (row)
         area = mesh_area(self.mesh_filename)
-        source_area = self.input_mesh_filename
+        source_area = mesh_area(self.input_mesh_filename)
 
         indices[nospread_i, 0] = row
         weights[nospread_i, 0] = source_area[nospread_i] / area[row]
