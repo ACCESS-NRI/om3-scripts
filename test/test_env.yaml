@@ -16,6 +16,7 @@ dependencies:
     - netCDF4<1.7
     - dask
     - access-nri-intake
+    - xxhash
     - setuptools
     - ruamel.yaml
     - scikit-learn
