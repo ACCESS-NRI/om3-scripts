@@ -120,21 +120,6 @@ def write_config_restart_path(config_path, new_restart_path):
         f.writelines(lines)
 
 
-def ensure_gitignore_entry(config_dir, entry):
-    """
-    Append entry to config_dir/.gitignore if it isn't already present.
-    """
-    gitignore_path = os.path.join(config_dir, ".gitignore")
-    lines = []
-    if os.path.isfile(gitignore_path):
-        with open(gitignore_path) as f:
-            lines = f.read().splitlines()
-
-    if entry not in lines:
-        with open(gitignore_path, "a") as f:
-            f.write(entry + "\n")
-
-
 def rewrite_cpl_restart(path, new_date, provenance):
     new_ymd = int(new_date.strftime("%Y%m%d"))
     with nc.Dataset(path, "r+") as f:
@@ -221,18 +206,14 @@ def main():
                 rewrite_cpl_restart(
                     dst,
                     args.new_date,
-                    get_provenance_metadata(
-                        input_files=[src], output_filename=dst, write_readme_file=False
-                    ),
+                    get_provenance_metadata(input_files=[src], write_readme_file=False),
                 )
                 key_files.append(src)
             case "cice":
                 rewrite_cice_restart(
                     dst,
                     args.new_date,
-                    get_provenance_metadata(
-                        input_files=[src], output_filename=dst, write_readme_file=False
-                    ),
+                    get_provenance_metadata(input_files=[src], write_readme_file=False),
                 )
                 key_files.append(src)
 
@@ -254,7 +235,6 @@ def main():
     )
 
     write_config_restart_path(config_path, output_dir)
-    ensure_gitignore_entry(config_dir, "initial_restart/")
 
     provenance = get_provenance_metadata(input_files=key_files, write_readme_file=False)
     commit_message = "\n".join(
@@ -269,9 +249,7 @@ def main():
         ]
     ).strip()
 
-    subprocess.run(
-        ["git", "-C", config_dir, "add", "config.yaml", ".gitignore"], check=True
-    )
+    subprocess.run(["git", "-C", config_dir, "add", "config.yaml"], check=True)
     subprocess.run(
         ["git", "-C", config_dir, "commit", "-m", commit_message], check=True
     )

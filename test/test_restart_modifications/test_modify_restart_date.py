@@ -12,7 +12,6 @@ from restart_modifications.modify_restart_date import (
     find_restart_files,
     read_config_restart_path,
     write_config_restart_path,
-    ensure_gitignore_entry,
     rewrite_cpl_restart,
     rewrite_cice_restart,
 )
@@ -198,17 +197,6 @@ def test_write_config_restart_path_missing_raises(tmp_path):
         write_config_restart_path(str(config_path), "/x/y/z")
 
 
-# --- .gitignore -----------------------------------------------------------
-
-
-def test_ensure_gitignore_entry_creates_and_is_idempotent(tmp_path):
-    ensure_gitignore_entry(str(tmp_path), "initial_restart/")
-    ensure_gitignore_entry(str(tmp_path), "initial_restart/")
-
-    lines = (tmp_path / ".gitignore").read_text().splitlines()
-    assert lines.count("initial_restart/") == 1
-
-
 # --- rewrite_cpl_restart / rewrite_cice_restart ----------------------------
 
 
@@ -270,8 +258,7 @@ def test_main_end_to_end(tmp_path):
         assert ds.myear == 2005
 
     # a single consolidated README.md describing the whole restart folder was
-    # written (not one per restart file), and it's inside the gitignored
-    # initial_restart/ dir so it doesn't get committed
+    # written (not one per restart file)
     readmes = list(initial_restart.glob("*.README.md"))
     assert len(readmes) == 1
 
@@ -282,7 +269,9 @@ def test_main_end_to_end(tmp_path):
     status = subprocess.run(
         ["git", "status", "--porcelain"], cwd=config_dir, capture_output=True, text=True
     )
-    assert status.stdout.strip() == ""  # working tree clean - restart: change committed
+    # config.yaml's change is committed - only initial_restart/ (untracked,
+    # not committed) shows up
+    assert status.stdout.strip() == "?? initial_restart/"
 
     log = subprocess.run(
         ["git", "log", "-1", "--format=%s"],
@@ -291,15 +280,6 @@ def test_main_end_to_end(tmp_path):
         text=True,
     )
     assert "1958-01-01" in log.stdout and "2005-01-01" in log.stdout
-
-    # initial_restart/ is gitignored, not left untracked
-    check_ignore = subprocess.run(
-        ["git", "check-ignore", "initial_restart"],
-        cwd=config_dir,
-        capture_output=True,
-        text=True,
-    )
-    assert check_ignore.returncode == 0
 
 
 def test_main_ww3_present_raises(tmp_path):
