@@ -6,15 +6,17 @@
 # Help is available by running:
 # `./gen_masktable.sh -h`.
 #
-# For more details, see https://github.com/COSIMA/mom6-panan/wiki/Preparing-inputs-for-a-new-configuration
+# For more details, see
+#   1. https://github.com/COSIMA/mom6-panan/wiki/Preparing-inputs-for-a-new-configuration
+#   2. https://github.com/ACCESS-NRI/MOM6/issues/42#issuecomment-5337278337
 
 set -euo pipefail
 
 # Help
 Help() {
-    echo "Generate MOM6 mask tables."
+    echo "Generate MOM5/MOM6 mask tables."
     echo
-    echo "Syntax: $(basename "$0") -g HGRID -t TOPOG [-l X Y] [-r MIN MAX] [-h]"
+    echo "Syntax: $(basename "$0") -g HGRID -t TOPOG [-l X Y] [-r MIN MAX] [-a] [-h]"
     echo
     echo "  -h   Show this help message"
     echo
@@ -28,6 +30,10 @@ Help() {
     echo "  -r MIN MAX    Search over PE range [MIN, MAX] and generate mask tables"
     echo
     echo "Optional:"
+    echo "  -a            Automatically adjust the number of masked land-only"
+    echo "                domains when required for MOM6 compatibility."
+    echo "                Supported with both -l and -r."
+    echo
     echo "  -x PERIODX    Period in the x-direction (default: 360)"
     echo
     echo "  -y PERIODY    Period in the y-direction (optional; default is aperiodic)"
@@ -36,13 +42,277 @@ Help() {
     echo "  # Exact layout mode (default)"
     echo "  ./gen_masktable.sh -g /path/to/hgrid.nc -t /path/to/topog.nc -l 16 32"
     echo
+    echo "  # Exact layout mode with automatic land-only domain adjustment"
+    echo "  ./gen_masktable.sh -g /path/to/hgrid.nc -t /path/to/topog.nc -l 16 32 -a"
+    echo
     echo "  # PE range mode"
     echo "  ./gen_masktable.sh -g /path/to/hgrid.nc -t /path/to/topog.nc -r 200 400"
+    echo "  # PE range mode with automatic land-only domain adjustment"
+    echo "  ./gen_masktable.sh -g /path/to/hgrid.nc -t /path/to/topog.nc -r 200 400 -a"
+    echo
     exit 0
 }
 
+# Read a dimension from a NetCDF file
+get_dim() {
+    local file=$1
+    local dim=$2
+
+    ncdump -h "${file}" | awk -v dim="${dim}" '
+        $1 == dim && $2 == "=" {
+            gsub(/;/, "", $3)
+            print $3
+        }
+    '
+}
+
+# Reproduce MOM_define_layout() from MOM6
+# https://github.com/ACCESS-NRI/MOM6/blob/6432010e3ab29df43994adabb413b69fe718d94c/src/framework/MOM_domains.F90#L466-L486
+mom_define_layout() {
+    local nx=$1
+    local ny=$2
+    local npes=$3
+
+    local idiv
+    local jdiv
+
+    idiv=$(
+        awk \
+            -v npes="${npes}" \
+            -v nx="${nx}" \
+            -v ny="${ny}" \
+            'BEGIN {
+                value = sqrt(npes * nx / ny)
+
+                # Equivalent to NINT() for positive values.
+                rounded = int(value + 0.5)
+
+                if (rounded < 1) {
+                    rounded = 1
+                }
+
+                print rounded
+            }'
+    )
+
+    while (( npes % idiv != 0 )); do
+        idiv=$((idiv - 1))
+    done
+
+    jdiv=$((npes / idiv))
+
+    echo "${idiv} ${jdiv}"
+}
+
+# Check whether the automatically selected MOM6 unmasked layout is compatible
+# with the factor-2 coarsened domain created by create_MOM_domain().
+#
+# Returns 0 if compatible, 1 if not compatible.
+mom6_layout_is_compatible() {
+    local nx=$1
+    local ny=$2
+    local npes=$3
+
+    local unmasked_x
+    local unmasked_y
+
+    read -r unmasked_x unmasked_y < <(
+        mom_define_layout "${nx}" "${ny}" "${npes}"
+    )
+
+    # MOM6 creates mpp_domain_d2 with coarsen=2.
+    local coarse_nx=$((nx / 2))
+    local coarse_ny=$((ny / 2))
+
+    if (( unmasked_x > coarse_nx || unmasked_y > coarse_ny )); then
+        return 1
+    fi
+
+    return 0
+}
+
+# Read metadata from a mask table
+read_masktable_metadata() {
+    local file=$1
+
+    local n_mask
+    local layout_x
+    local layout_y
+
+    n_mask=$(sed -n '1p' "${file}")
+
+    read -r layout_x layout_y < <(
+        sed -n '2p' "${file}" |
+            tr ',' ' '
+    )
+
+    echo "${n_mask} ${layout_x} ${layout_y}"
+}
+
+# Calculate the approximate processor overhead (in percent)
+approx_processor_overhead() {
+    local original_active=$1
+    local adjusted_active=$2
+
+    awk \
+        -v original="${original_active}" \
+        -v adjusted="${adjusted_active}" \
+        'BEGIN {
+            if (adjusted <= 0) {
+                printf "0.000"
+                exit
+            }
+
+            overhead = (1.0 - original / adjusted) * 100.0
+            printf "%.3f", overhead
+        }'
+}
+
+# Find the largest compatible number of masks <= max_masks.
+find_compatible_mask_count() {
+    local nx=$1
+    local ny=$2
+    local layout_x=$3
+    local layout_y=$4
+    local max_masks=$5
+
+    local n_mask
+    local active_pes
+
+    for ((n_mask=max_masks; n_mask>=0; n_mask--)); do
+        active_pes=$((layout_x * layout_y - n_mask))
+
+        if mom6_layout_is_compatible \
+            "${nx}" \
+            "${ny}" \
+            "${active_pes}"
+        then
+            echo "${n_mask}"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+# Create a new mask table containing fewer masked land-only domains
+write_adjusted_masktable() {
+    local input=$1
+    local new_n_mask=$2
+
+    local old_n_mask
+    local layout_x
+    local layout_y
+
+    read -r old_n_mask layout_x layout_y < <(
+        read_masktable_metadata "${input}"
+    )
+
+    local output="mask_table.${new_n_mask}.${layout_x}x${layout_y}"
+
+    awk \
+        -v keep="${new_n_mask}" \
+        -v new_count="${new_n_mask}" \
+        '
+        NR == 1 {
+            print new_count
+            next
+        }
+
+        NR == 2 {
+            print
+            next
+        }
+
+        NR >= 3 && NR < 3 + keep {
+            print
+        }
+        ' \
+        "${input}" > "${output}"
+
+    echo "${output}"
+}
+
+# Print details of the MOM6 compatibility calculation.
+#
+# Returns:
+#   0 = compatible
+#   1 = incompatible
+validate_masktable() {
+    local file=$1
+    local nx=$2
+    local ny=$3
+
+    local n_mask
+    local layout_x
+    local layout_y
+
+    read -r n_mask layout_x layout_y < <(
+        read_masktable_metadata "${file}"
+    )
+
+    local total_domains=$((layout_x * layout_y))
+    local active_pes=$((total_domains - n_mask))
+
+    local unmasked_x
+    local unmasked_y
+
+    read -r unmasked_x unmasked_y < <(
+        mom_define_layout "${nx}" "${ny}" "${active_pes}"
+    )
+
+    local coarse_nx=$((nx / 2))
+    local coarse_ny=$((ny / 2))
+
+    echo
+    echo "-- MOM6 compatibility check: ${file}"
+    echo "   Logical layout:           ${layout_x} x ${layout_y}"
+    echo "   Total logical domains:    ${total_domains}"
+    echo "   Masked land domains:      ${n_mask}"
+    echo "   Active PEs:               ${active_pes}"
+    echo "   MOM6 unmasked layout:     ${unmasked_x} x ${unmasked_y}"
+    echo "   Coarsened global domain:  ${coarse_nx} x ${coarse_ny}"
+
+    if (( unmasked_x > coarse_nx || unmasked_y > coarse_ny )); then
+        echo "   MOM6 compatibility:       FAILED"
+        echo
+
+        echo "ERROR: ${file} is incompatible with MOM6's factor-2" >&2
+        echo "coarsened unmasked domain." >&2
+        echo >&2
+        echo "MOM6 would attempt to decompose:" >&2
+        echo "    ${coarse_nx} x ${coarse_ny}" >&2
+        echo "using the unmasked layout:" >&2
+        echo "    ${unmasked_x} x ${unmasked_y}" >&2
+        echo >&2
+
+        if (( unmasked_x > coarse_nx )); then
+            echo "The x layout (${unmasked_x}) exceeds the number of coarse" >&2
+            echo "x grid points (${coarse_nx})." >&2
+            echo >&2
+        fi
+
+        if (( unmasked_y > coarse_ny )); then
+            echo "The y layout (${unmasked_y}) exceeds the number of coarse" >&2
+            echo "y grid points (${coarse_ny})." >&2
+            echo >&2
+        fi
+
+        echo "This would produce zero-sized FMS domains and can trigger:" >&2
+        echo >&2
+        echo "  MPP_DEFINE_DOMAINS(mpp_compute_extent):" >&2
+        echo "  domain extents must be positive definite." >&2
+
+        return 1
+    fi
+
+    echo "   MOM6 compatibility:       OK"
+
+    return 0
+}
+
+
 # default settings
-EXACT_LAYOUT=True
 PERIODX=360
 PERIODY=""   # no periody by default (aperiodic in y)
 LAYOUT_X=""
@@ -52,11 +322,15 @@ MIN_PROCESSORS=""
 MAX_PROCESSORS=""
 OCEAN_HGRID=""
 OCEAN_TOPOG=""
+AUTO_ADJUST=false
 
-while getopts ":hg:t:l:r:x:y:" option; do
+while getopts ":hag:t:l:r:x:y:" option; do
     case "${option}" in
         h)
             Help
+            ;;
+        a)
+            AUTO_ADJUST=true
             ;;
         g)
             OCEAN_HGRID="${OPTARG}"
@@ -66,15 +340,37 @@ while getopts ":hg:t:l:r:x:y:" option; do
             ;;
         # EXACT layout mode: -l X Y
         l)
+            if [[ -n "${MODE}" ]]; then
+                echo "ERROR: Specify only one of -l or -r." >&2
+                exit 1
+            fi
+
             MODE="layout"
             LAYOUT_X="${OPTARG}"
+
+            if (( OPTIND > $# )); then
+                echo "ERROR: -l requires two arguments: -l X Y" >&2
+                exit 1
+            fi
+
             LAYOUT_Y="${!OPTIND}"
             OPTIND=$((OPTIND + 1))
             ;;
         # PE range mode: -r MIN MAX
         r)
+            if [[ -n "${MODE}" ]]; then
+                echo "ERROR: Specify only one of -l or -r." >&2
+                exit 1
+            fi
+
             MODE="range"
             MIN_PROCESSORS="${OPTARG}"
+
+            if (( OPTIND > $# )); then
+                echo "ERROR: -r requires two arguments: -r MIN MAX" >&2
+                exit 1
+            fi
+
             MAX_PROCESSORS="${!OPTIND}"
             OPTIND=$((OPTIND + 1))
             ;;
@@ -95,28 +391,83 @@ while getopts ":hg:t:l:r:x:y:" option; do
     esac
 done
 
-# load modules
-module use /g/data/vk83/modules
-module load model-tools/fre-nctools/2024.05-1
-module load nco
-
 # Required inputs - hgrid.nc and topog.nc
 : "${OCEAN_HGRID:?ERROR: -g HGRID is required}"
 : "${OCEAN_TOPOG:?ERROR: -t TOPOG is required}"
 
+if [[ ! -f "${OCEAN_HGRID}" ]]; then
+    echo "ERROR: HGRID does not exist: ${OCEAN_HGRID}" >&2
+    exit 1
+fi
+
+if [[ ! -f "${OCEAN_TOPOG}" ]]; then
+    echo "ERROR: TOPOG does not exist: ${OCEAN_TOPOG}" >&2
+    exit 1
+fi
+
 if [[ -z "${MODE}" ]]; then
-    echo "ERROR: You must specify exactly one of -l X Y (layout) or -r MIN MAX (PE range)." >&2
+    echo "ERROR: You must specify exactly one of:" >&2
+    echo "  -l X Y" >&2
+    echo "  -r MIN MAX" >&2
     exit 1
 fi
 
 if [[ "${MODE}" == "layout" ]]; then
-    : "${LAYOUT_X:?ERROR: -l X Y requires two arguments (X and Y).}"
-    : "${LAYOUT_Y:?ERROR: -l X Y requires two arguments (X and Y).}"
+    : "${LAYOUT_X:?ERROR: -l X Y requires two arguments}"
+    : "${LAYOUT_Y:?ERROR: -l X Y requires two arguments}"
+
+    if [[ ! "${LAYOUT_X}" =~ ^[0-9]+$ ||
+          ! "${LAYOUT_Y}" =~ ^[0-9]+$ ||
+          "${LAYOUT_X}" -le 0 ||
+          "${LAYOUT_Y}" -le 0 ]]
+    then
+        echo "ERROR: -l X Y requires positive integers." >&2
+        exit 1
+    fi
+
 elif [[ "${MODE}" == "range" ]]; then
-    : "${MIN_PROCESSORS:?ERROR: -r MIN MAX requires two arguments (MIN and MAX).}"
-    : "${MAX_PROCESSORS:?ERROR: -r MIN MAX requires two arguments (MIN and MAX).}"
+    : "${MIN_PROCESSORS:?ERROR: -r MIN MAX requires two arguments}"
+    : "${MAX_PROCESSORS:?ERROR: -r MIN MAX requires two arguments}"
+
+    if [[ ! "${MIN_PROCESSORS}" =~ ^[0-9]+$ ||
+          ! "${MAX_PROCESSORS}" =~ ^[0-9]+$ ||
+          "${MIN_PROCESSORS}" -le 0 ||
+          "${MAX_PROCESSORS}" -le 0 ]]
+    then
+        echo "ERROR: -r MIN MAX requires positive integers." >&2
+        exit 1
+    fi
+
+    if (( MIN_PROCESSORS > MAX_PROCESSORS )); then
+        echo "ERROR: MIN must not exceed MAX." >&2
+        exit 1
+    fi
 fi
 
+
+# load modules
+module use /g/data/vk83/modules
+module load model-tools/fre-nctools/2024.05-1
+module load nco
+module load netcdf
+
+# -----------------------------------------------------------------------------
+# Determine MOM grid dimensions
+# -----------------------------------------------------------------------------
+
+NX=$(get_dim "${OCEAN_TOPOG}" "nx")
+NY=$(get_dim "${OCEAN_TOPOG}" "ny")
+
+if [[ -z "${NX}" || -z "${NY}" ]]; then
+    echo "ERROR: Could not determine nx/ny from ${OCEAN_TOPOG}" >&2
+    exit 1
+fi
+
+echo "-- MOM grid size: ${NX} x ${NY}"
+
+# -----------------------------------------------------------------------------
+# Prepare local input files
+# -----------------------------------------------------------------------------
 HGRID_FILE=$(basename "${OCEAN_HGRID}")
 TOPOG_FILE=$(basename "${OCEAN_TOPOG}")
 
@@ -161,17 +512,228 @@ make_quick_mosaic \
     --ocean_topog "${TOPOG_FILE}"
 
 # Generate masktable(s)
+
+# Keep check_mask's normal terminal output, while also recording it so that
+# the generated mask-table filenames can be obtained directly from its:
+#
+#   used=..., masked=..., layout=...
+#
+# output lines.
+CHECK_MASK_LOG=$(mktemp)
+cleanup() {
+    rm -rf "${CHECK_MASK_LOG}"
+}
+
+trap cleanup EXIT
+
 if [[ "${MODE}" == "layout" ]]; then
     echo "-- Running check_mask with layout ${LAYOUT_X},${LAYOUT_Y}"
     check_mask \
         --grid_file ocean_mosaic.nc \
         --ocean_topog "${OCEAN_TOPOG}" \
-        --layout "${LAYOUT_X},${LAYOUT_Y}"
+        --layout "${LAYOUT_X},${LAYOUT_Y}" \
+        2>&1 | tee "${CHECK_MASK_LOG}"
 else
     echo "-- Running check_mask with PE range ${MIN_PROCESSORS}-${MAX_PROCESSORS}"
     check_mask \
         --grid_file ocean_mosaic.nc \
         --ocean_topog "${OCEAN_TOPOG}" \
         --min_pe "${MIN_PROCESSORS}" \
-        --max_pe "${MAX_PROCESSORS}"
+        --max_pe "${MAX_PROCESSORS}" \
+        2>&1 | tee "${CHECK_MASK_LOG}"
+fi
+
+# -----------------------------------------------------------------------------
+# Locate mask tables generated by this invocation
+# -----------------------------------------------------------------------------
+
+mapfile -t GENERATED_MASKTABLES < <(
+    sed -nE \
+        's/.*masked=([0-9]+),[[:space:]]*layout=([0-9]+),[[:space:]]*([0-9]+).*/mask_table.\1.\2x\3/p' \
+        "${CHECK_MASK_LOG}" |
+        sort -u
+)
+
+if (( ${#GENERATED_MASKTABLES[@]} == 0 )); then
+    echo "ERROR: check_mask did not generate any mask tables." >&2
+    exit 1
+fi
+
+# Make sure the files reported by check_mask actually exist.
+for masktable in "${GENERATED_MASKTABLES[@]}"; do
+    if [[ ! -f "${masktable}" ]]; then
+        echo "ERROR: check_mask reported ${masktable}, but the file does not exist." >&2
+        exit 1
+    fi
+done
+
+# -----------------------------------------------------------------------------
+# MOM6 compatibility validation / adjustment
+# -----------------------------------------------------------------------------
+
+N_COMPATIBLE=0
+N_INCOMPATIBLE=0
+N_ADJUSTED=0
+N_UNADJUSTABLE=0
+
+for masktable in "${GENERATED_MASKTABLES[@]}"; do
+
+    # -------------------------------------------------------------------------
+    # Already compatible
+    # -------------------------------------------------------------------------
+
+    if validate_masktable "${masktable}" "${NX}" "${NY}"; then
+        N_COMPATIBLE=$((N_COMPATIBLE + 1))
+        continue
+    fi
+
+    N_INCOMPATIBLE=$((N_INCOMPATIBLE + 1))
+
+    read -r n_mask layout_x layout_y < <(
+        read_masktable_metadata "${masktable}"
+    )
+
+    total_domains=$((layout_x * layout_y))
+    original_active_pes=$((total_domains - n_mask))
+
+    compatible_n_mask=""
+
+    if ! compatible_n_mask=$(
+        find_compatible_mask_count \
+            "${NX}" \
+            "${NY}" \
+            "${layout_x}" \
+            "${layout_y}" \
+            "${n_mask}"
+    ); then
+        echo
+        echo "WARNING: Could not find a MOM6-compatible adjustment for:"
+        echo "         ${masktable}"
+        echo
+
+        N_UNADJUSTABLE=$((N_UNADJUSTABLE + 1))
+        continue
+    fi
+
+    compatible_active_pes=$((layout_x * layout_y - compatible_n_mask))
+    extra_land_pes=$((compatible_active_pes - original_active_pes))
+
+    processor_overhead=$(
+        approx_processor_overhead \
+            "${original_active_pes}" \
+            "${compatible_active_pes}"
+    )
+
+    read -r compatible_unmasked_x compatible_unmasked_y < <(
+        mom_define_layout \
+            "${NX}" \
+            "${NY}" \
+            "${compatible_active_pes}"
+    )
+
+    echo
+    echo "-- Nearest MOM6-compatible mask configuration"
+    echo "   Logical layout:                ${layout_x} x ${layout_y}"
+    echo "   Original masked domains:       ${n_mask}"
+    echo "   Compatible masked domains:     ${compatible_n_mask}"
+    echo "   Original active PEs:           ${original_active_pes}"
+    echo "   Compatible active PEs:         ${compatible_active_pes}"
+    echo "   Extra retained land-only PEs:  ${extra_land_pes}"
+    echo "   Compatible unmasked layout:    ${compatible_unmasked_x} x ${compatible_unmasked_y}"
+    echo "   Approx. processor overhead:     ${processor_overhead} %"
+    echo
+    echo "   NOTE: The processor overhead only represents the additional"
+    echo "   allocation from retaining land-only PEs. It is not an estimate"
+    echo "   of wall-clock performance loss."
+    echo
+
+    # -------------------------------------------------------------------------
+    # Validation-only mode
+    # -------------------------------------------------------------------------
+
+    if [[ "${AUTO_ADJUST}" != true ]]; then
+        echo "   No adjusted mask table generated because -a was not specified."
+        echo
+        continue
+    fi
+
+    # -------------------------------------------------------------------------
+    # Auto-adjust
+    # -------------------------------------------------------------------------
+
+    adjusted_masktable=$(
+        write_adjusted_masktable \
+            "${masktable}" \
+            "${compatible_n_mask}"
+    )
+
+    echo "-- Generated adjusted MOM6-compatible mask table"
+    echo "   check_mask result: ${masktable}"
+    echo "   Final mask table:  ${adjusted_masktable}"
+    echo
+
+    if validate_masktable \
+        "${adjusted_masktable}" \
+        "${NX}" \
+        "${NY}"
+    then
+        N_ADJUSTED=$((N_ADJUSTED + 1))
+    else
+        echo "ERROR: Adjusted mask table unexpectedly failed validation:" >&2
+        echo "       ${adjusted_masktable}" >&2
+
+        rm -f "${adjusted_masktable}"
+
+        N_UNADJUSTABLE=$((N_UNADJUSTABLE + 1))
+    fi
+
+done
+
+# -----------------------------------------------------------------------------
+# Summary
+# -----------------------------------------------------------------------------
+
+echo
+echo "-- Mask-table generation complete"
+echo "   Generated by check_mask:   ${#GENERATED_MASKTABLES[@]}"
+echo "   Already MOM6-compatible:   ${N_COMPATIBLE}"
+echo "   Initially incompatible:    ${N_INCOMPATIBLE}"
+
+if [[ "${AUTO_ADJUST}" == true ]]; then
+    echo "   Automatically adjusted:    ${N_ADJUSTED}"
+fi
+
+if (( N_UNADJUSTABLE > 0 )); then
+    echo "   Could not adjust:          ${N_UNADJUSTABLE}"
+fi
+
+
+# Validation-only mode should return failure if incompatible tables were found,
+# but only after checking the full range.
+if [[ "${AUTO_ADJUST}" != true ]] && (( N_INCOMPATIBLE > 0 )); then
+    echo
+    echo "One or more generated mask tables are not compatible with MOM6."
+    echo "Re-run with -a to generate adjusted tables."
+
+    if [[ "${MODE}" == "layout" ]]; then
+        echo
+        echo "  $(basename "$0") \\"
+        echo "      -g ${OCEAN_HGRID} \\"
+        echo "      -t ${OCEAN_TOPOG} \\"
+        echo "      -l ${LAYOUT_X} ${LAYOUT_Y} -a"
+    elif [[ "${MODE}" == "range" ]]; then
+        echo
+        echo "  $(basename "$0") \\"
+        echo "      -g ${OCEAN_HGRID} \\"
+        echo "      -t ${OCEAN_TOPOG} \\"
+        echo "      -r ${MIN_PROCESSORS} ${MAX_PROCESSORS} -a"
+    fi
+
+    exit 1
+fi
+
+
+# Auto-adjust was requested but some candidates still could not be repaired.
+if [[ "${AUTO_ADJUST}" == true ]] && (( N_UNADJUSTABLE > 0 )); then
+    exit 1
 fi
