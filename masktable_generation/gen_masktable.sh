@@ -16,7 +16,7 @@ set -euo pipefail
 Help() {
     echo "Generate MOM5/MOM6 mask tables."
     echo
-    echo "Syntax: $(basename "$0") -g HGRID -t TOPOG [-l X Y] [-r MIN MAX] [-a] [-h]"
+    echo "Syntax: $(basename "$0") -g HGRID -t TOPOG [-l X Y] [-r MIN MAX] [-m MODEL] [-a] [-h]"
     echo
     echo "  -h   Show this help message"
     echo
@@ -30,9 +30,15 @@ Help() {
     echo "  -r MIN MAX    Search over PE range [MIN, MAX] and generate mask tables"
     echo
     echo "Optional:"
+    echo "  -m MODEL      Target model: mom5 or mom6 (default: mom6)"
+    echo "                Both models read the same mask-table format, but only"
+    echo "                MOM6 constrains which tables are usable (see -a). With"
+    echo "                -m mom5 the MOM6 check is skipped and every table"
+    echo "                produced by check_mask is kept as-is."
+    echo
     echo "  -a            Automatically adjust the number of masked land-only"
     echo "                domains when required for MOM6 compatibility."
-    echo "                Supported with both -l and -r."
+    echo "                Supported with both -l and -r. MOM6 only."
     echo
     echo "  -x PERIODX    Period in the x-direction (default: 360)"
     echo
@@ -49,6 +55,9 @@ Help() {
     echo "  ./gen_masktable.sh -g /path/to/hgrid.nc -t /path/to/topog.nc -r 200 400"
     echo "  # PE range mode with automatic land-only domain adjustment"
     echo "  ./gen_masktable.sh -g /path/to/hgrid.nc -t /path/to/topog.nc -r 200 400 -a"
+    echo
+    echo "  # MOM5: generate tables without the MOM6 compatibility check"
+    echo "  ./gen_masktable.sh -g /path/to/hgrid.nc -t /path/to/topog.nc -r 200 400 -m mom5"
     echo
     exit 0
 }
@@ -323,14 +332,29 @@ MAX_PROCESSORS=""
 OCEAN_HGRID=""
 OCEAN_TOPOG=""
 AUTO_ADJUST=false
+TARGET_MODEL="mom6"
 
-while getopts ":hag:t:l:r:x:y:" option; do
+while getopts ":ham:g:t:l:r:x:y:" option; do
     case "${option}" in
         h)
             Help
             ;;
         a)
             AUTO_ADJUST=true
+            ;;
+        m)
+            case "${OPTARG,,}" in
+                mom5)
+                    TARGET_MODEL="mom5"
+                    ;;
+                mom6)
+                    TARGET_MODEL="mom6"
+                    ;;
+                *)
+                    echo "ERROR: -m must be one of: mom5, mom6 (got '${OPTARG}')" >&2
+                    exit 1
+                    ;;
+            esac
             ;;
         g)
             OCEAN_HGRID="${OPTARG}"
@@ -444,6 +468,27 @@ elif [[ "${MODE}" == "range" ]]; then
     fi
 fi
 
+# The MOM6 land-domain adjustment has no meaning for MOM5, which does not
+# impose the coarsened-domain constraint that -a works around.
+if [[ "${TARGET_MODEL}" == "mom5" && "${AUTO_ADJUST}" == true ]]; then
+    echo "ERROR: -a is a MOM6-only adjustment and cannot be combined with -m mom5." >&2
+    echo "       MOM5 imposes no constraint on the mask table, so no" >&2
+    echo "       adjustment is required." >&2
+    exit 1
+fi
+
+# Periods are passed straight through to make_solo_mosaic, which expects a
+# non-negative number of degrees (0 means aperiodic in that direction).
+if [[ ! "${PERIODX}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    echo "ERROR: -x PERIODX must be a non-negative number (got '${PERIODX}')." >&2
+    exit 1
+fi
+
+if [[ -n "${PERIODY}" && ! "${PERIODY}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    echo "ERROR: -y PERIODY must be a non-negative number (got '${PERIODY}')." >&2
+    exit 1
+fi
+
 
 # load modules
 module use /g/data/vk83/modules
@@ -499,7 +544,7 @@ cp "${OCEAN_TOPOG}" "${TOPOG_FILE}"
 ncap2 -s 'defdim("ntiles",1)' -A "${TOPOG_FILE}" "${TOPOG_FILE}"
 
 # Generate ocean mosaic
-msg=(
+solo_mosaic_args=(
     --num_tiles 1
     --dir .
     --mosaic_name ocean_mosaic
@@ -509,10 +554,10 @@ msg=(
 
 # Only append --periody if user explicitly provided -y
 if [[ -n "${PERIODY}" ]]; then
-    msg+=(--periody "${PERIODY}")
+    solo_mosaic_args+=(--periody "${PERIODY}")
 fi
 
-make_solo_mosaic "${msg[@]}"
+make_solo_mosaic "${solo_mosaic_args[@]}"
 
 # Generate exchange grids
 make_quick_mosaic \
@@ -521,6 +566,10 @@ make_quick_mosaic \
     --ocean_topog "${TOPOG_FILE}"
 
 # Generate masktable(s)
+#
+# check_mask is given the original topog file rather than the local copy: it
+# reads the `depth` field and takes its tile count from the mosaic file, so it
+# does not need the `ntiles` dimension added above for make_quick_mosaic.
 
 # Keep check_mask's normal terminal output, while also recording it so that
 # the generated mask-table filenames can be obtained directly from its:
@@ -577,7 +626,40 @@ for masktable in "${GENERATED_MASKTABLES[@]}"; do
 done
 
 # -----------------------------------------------------------------------------
+# MOM5: nothing further to check
+#
+# MOM5 reads the same mask-table format as MOM6 (both use the FMS
+# parse_mask_table routine), but it creates a single ocean domain and has no
+# equivalent of MOM6's separate unmasked domain or its factor-2 coarsened clone.
+# The constraint checked below therefore does not apply, and every table
+# check_mask produced is usable as-is.
+# -----------------------------------------------------------------------------
+
+if [[ "${TARGET_MODEL}" == "mom5" ]]; then
+    echo
+    echo "-- Mask-table generation complete (target model: MOM5)"
+    echo "   Generated by check_mask:   ${#GENERATED_MASKTABLES[@]}"
+
+    for masktable in "${GENERATED_MASKTABLES[@]}"; do
+        echo "     ${masktable}"
+    done
+
+    echo
+    echo "   NOTE: The MOM6 coarsened-domain constraint does not apply to MOM5,"
+    echo "   so no compatibility check or adjustment was performed."
+
+    exit 0
+fi
+
+# -----------------------------------------------------------------------------
 # MOM6 compatibility validation / adjustment
+#
+# When a mask table is present, MOM6 additionally builds an *unmasked* domain to
+# write the complete ocean geometry, whose layout is derived from the active PE
+# count via MOM_define_layout(). create_MOM_domain() then unconditionally clones
+# a factor-2 coarsened copy of it. A skewed unmasked layout that is valid at full
+# resolution can therefore become invalid on the nx/2 x ny/2 coarsened domain,
+# producing zero-sized FMS domains.
 # -----------------------------------------------------------------------------
 
 N_COMPATIBLE=0
@@ -703,7 +785,7 @@ done
 # -----------------------------------------------------------------------------
 
 echo
-echo "-- Mask-table generation complete"
+echo "-- Mask-table generation complete (target model: MOM6)"
 echo "   Generated by check_mask:   ${#GENERATED_MASKTABLES[@]}"
 echo "   Already MOM6-compatible:   ${N_COMPATIBLE}"
 echo "   Initially incompatible:    ${N_INCOMPATIBLE}"
@@ -737,6 +819,10 @@ if [[ "${AUTO_ADJUST}" != true ]] && (( N_INCOMPATIBLE > 0 )); then
         echo "      -t ${OCEAN_TOPOG} \\"
         echo "      -r ${MIN_PROCESSORS} ${MAX_PROCESSORS} -a"
     fi
+
+    echo
+    echo "If these tables are intended for MOM5, re-run with -m mom5: the"
+    echo "constraint above is specific to MOM6 and the tables are already valid."
 
     exit 1
 fi
