@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 # Copyright 2025 ACCESS-NRI and contributors. See the top-level COPYRIGHT file for details.
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -471,6 +471,15 @@ echo "-- MOM grid size: ${NX} x ${NY}"
 HGRID_FILE=$(basename "${OCEAN_HGRID}")
 TOPOG_FILE=$(basename "${OCEAN_TOPOG}")
 
+# If the source file already lives in the working directory under the same
+# name, use a distinctly-named local copy instead of clobbering the source.
+if [[ -e "${HGRID_FILE}" ]] && [[ "${OCEAN_HGRID}" -ef "${HGRID_FILE}" ]]; then
+    HGRID_FILE="local_${HGRID_FILE}"
+fi
+if [[ -e "${TOPOG_FILE}" ]] && [[ "${OCEAN_TOPOG}" -ef "${TOPOG_FILE}" ]]; then
+    TOPOG_FILE="local_${TOPOG_FILE}"
+fi
+
 # `make_quick_mosaic` requires local hgrid.nc
 echo "-- Copying ${OCEAN_HGRID} -> ./${HGRID_FILE}"
 if [[ -e "${HGRID_FILE}" ]]; then
@@ -484,7 +493,7 @@ echo "-- Copying ${OCEAN_TOPOG} -> ./${TOPOG_FILE}"
 if [[ -e "${TOPOG_FILE}" ]]; then
     rm -f "${TOPOG_FILE}"
 fi
-cp "${OCEAN_TOPOG}" "${TOPOG_FILE}" 
+cp "${OCEAN_TOPOG}" "${TOPOG_FILE}"
 
 # Add ntiles dimension to topog file
 ncap2 -s 'defdim("ntiles",1)' -A "${TOPOG_FILE}" "${TOPOG_FILE}"
