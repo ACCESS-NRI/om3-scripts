@@ -45,5 +45,10 @@ jobs:
         conda env list
         conda list
     - name: Test with pytest
+      env:
+        # GitHub Actions runners don't have working InfiniBand/RoCE devices,
+        # and OpenMPI's UCX transport can fail to initialise trying to probe
+        # for them ("ucx_iface_open ... Address not valid"). Force plain TCP.
+        UCX_TLS: tcp,self
       run: |
         python -m pytest -m "not broken" -v -s
