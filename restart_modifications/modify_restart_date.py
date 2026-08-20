@@ -254,9 +254,18 @@ def main():
     ).strip()
 
     try:
-        subprocess.run(["git", "-C", config_dir, "add", "config.yaml"], check=True)
         subprocess.run(
-            ["git", "-C", config_dir, "commit", "-m", commit_message], check=True
+            [
+                "git",
+                "-C",
+                config_dir,
+                "commit",
+                "-m",
+                commit_message,
+                "--",
+                "config.yaml",
+            ],
+            check=True,
         )
     except subprocess.CalledProcessError:
         warn(f"Could not commit in {config_dir}")

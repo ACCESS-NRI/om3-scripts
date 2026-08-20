@@ -337,6 +337,35 @@ def test_main_not_a_git_repo_warns_but_succeeds(tmp_path):
     )
 
 
+def test_main_commit_only_includes_config_yaml(tmp_path):
+    # if the user already has other changes staged in config_dir before
+    # running the script, the script's commit should not sweep those in too
+    restart_dir = make_restart_set(tmp_path / "source" / "restart065")
+    config_dir = tmp_path / "config"
+    init_config_repo(config_dir, restart_dir)
+
+    (config_dir / "other.txt").write_text("unrelated pre-existing change\n")
+    subprocess.run(["git", "add", "other.txt"], cwd=config_dir, check=True)
+
+    result = run_script(config_dir, "2005-01-01")
+    assert result.returncode == 0, result.stderr
+
+    changed_files = subprocess.run(
+        ["git", "show", "--name-only", "--format=", "HEAD"],
+        cwd=config_dir,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert changed_files == ["config.yaml"]
+
+    # other.txt is still staged, untouched, not committed
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=config_dir, capture_output=True, text=True
+    )
+    assert "A  other.txt" in status.stdout.splitlines()
+
+
 def test_main_rerun_raises(tmp_path):
     restart_dir = make_restart_set(tmp_path / "source" / "restart065")
     config_dir = tmp_path / "config"
