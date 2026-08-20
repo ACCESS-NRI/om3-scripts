@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0.
 
 import sys
+import os
 import subprocess
 from pathlib import Path
 
@@ -93,7 +94,7 @@ def init_config_repo(config_dir, restart_path):
     )
 
 
-def run_script(config_dir, new_date):
+def run_script(config_dir, new_date, cwd=None):
     return subprocess.run(
         [
             sys.executable,
@@ -103,6 +104,7 @@ def run_script(config_dir, new_date):
             "--new_date",
             new_date,
         ],
+        cwd=cwd,
         capture_output=True,
         text=True,
     )
@@ -282,6 +284,25 @@ def test_main_end_to_end(tmp_path):
     assert "1958-01-01" in log.stdout and "2005-01-01" in log.stdout
 
 
+def test_main_relative_restart_path_resolves_against_config_dir(tmp_path):
+    # config.yaml's restart: field is relative, and the script is invoked
+    # from a completely different cwd - the relative path should resolve
+    # against --config_dir, not the process's cwd.
+    restart_dir = make_restart_set(tmp_path / "source" / "restart065")
+    config_dir = tmp_path / "config"
+    relative_restart = os.path.relpath(restart_dir, config_dir)
+    init_config_repo(config_dir, relative_restart)
+
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+
+    result = run_script(config_dir, "2005-01-01", cwd=elsewhere)
+    assert result.returncode == 0, result.stderr
+
+    initial_restart = config_dir / "initial_restart"
+    assert (initial_restart / "access-om3.cpl.r.2005-01-01-00000.nc").is_file()
+
+
 def test_main_ww3_present_raises(tmp_path):
     restart_dir = make_restart_set(tmp_path / "source" / "restart065")
     touch(restart_dir / "access-om3.ww3.r.1958-01-01-00000.nc")
@@ -293,6 +314,27 @@ def test_main_ww3_present_raises(tmp_path):
     assert result.returncode != 0
     assert "ww3" in result.stderr.lower()
     assert not (config_dir / "initial_restart").exists()
+
+
+def test_main_not_a_git_repo_warns_but_succeeds(tmp_path):
+    restart_dir = make_restart_set(tmp_path / "source" / "restart065")
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.yaml").write_text(
+        "model: access-om3\n" f"restart: {restart_dir}\n" "restart_freq: 1YS\n"
+    )
+    # deliberately no `git init` here
+
+    result = run_script(config_dir, "2005-01-01")
+
+    assert result.returncode == 0, result.stderr
+    assert "UserWarning" in result.stderr
+
+    initial_restart = config_dir / "initial_restart"
+    assert (initial_restart / "access-om3.cpl.r.2005-01-01-00000.nc").is_file()
+    assert read_config_restart_path(str(config_dir / "config.yaml")) == str(
+        initial_restart
+    )
 
 
 def test_main_rerun_raises(tmp_path):

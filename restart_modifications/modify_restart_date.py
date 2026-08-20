@@ -10,6 +10,7 @@ import subprocess
 from datetime import date
 from glob import glob
 from pathlib import Path
+from warnings import warn
 
 import netCDF4 as nc
 
@@ -163,6 +164,9 @@ def main():
         raise ValueError(f"No config.yaml found in {config_dir}")
 
     input_dir = read_config_restart_path(config_path)
+    if not os.path.isabs(input_dir):
+        # Relative to config_dir, not the current working directory
+        input_dir = os.path.join(config_dir, input_dir)
     output_dir = os.path.join(config_dir, "initial_restart")
     if os.path.exists(output_dir):
         raise ValueError(f"{output_dir} already exists - remove it before re-running")
@@ -249,14 +253,17 @@ def main():
         ]
     ).strip()
 
-    subprocess.run(["git", "-C", config_dir, "add", "config.yaml"], check=True)
-    subprocess.run(
-        ["git", "-C", config_dir, "commit", "-m", commit_message], check=True
-    )
+    try:
+        subprocess.run(["git", "-C", config_dir, "add", "config.yaml"], check=True)
+        subprocess.run(
+            ["git", "-C", config_dir, "commit", "-m", commit_message], check=True
+        )
+    except subprocess.CalledProcessError:
+        warn(f"Could not commit in {config_dir}")
 
     print(
         f"\nModified restarts for {old_str} -> {new_str} in {output_dir}, "
-        f"updated config.yaml, and committed the change in {config_dir}."
+        f"and updated config.yaml"
     )
 
 
