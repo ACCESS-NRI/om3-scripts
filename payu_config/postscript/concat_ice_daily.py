@@ -113,7 +113,10 @@ def compare_dataarrays(input_da, expected_da):
 
 class Concat_Ice_Daily:
 
-    def __init__(self, directory=None, assume_gadi=True):
+    def __init__(self, directory=None, assume_gadi=True, client=None):
+        """
+        client: an existing dask.distributed.Client to reuse.
+        """
         if directory is None:
             output_f = glob.glob("archive/output*")
             if not output_f:
@@ -126,7 +129,8 @@ class Concat_Ice_Daily:
         if not self.daily_f:
             raise Exception(f"No daily output files found in {directory}")
 
-        self.client = start_client(assume_gadi)
+        self._owns_client = client is None
+        self.client = client if client is not None else start_client(assume_gadi)
         daily_ds = lazy_open(self.daily_f).chunk({"time": 31}).persist()
 
         # del incorrect metadata
@@ -143,7 +147,8 @@ class Concat_Ice_Daily:
         for file in self.month_f:
             if file.exists() and delete_monthf:
                 os.remove(file)
-        self.client.close()
+        if self._owns_client:
+            self.client.close()
 
         raise Exception(error_msg)
 
@@ -214,7 +219,8 @@ class Concat_Ice_Daily:
         try:
             dask.compute(*tasks)
         except:
-            self.client.close()
+            if self._owns_client:
+                self.client.close()
             raise Exception(
                 "concat_ice_daily: one or more output files do not match input"
             )
@@ -236,10 +242,11 @@ class Concat_Ice_Daily:
         print(f"concat_ice_daily: finished processing {self.directory}")
 
 
-def concat_ice_daily(directory=None, assume_gadi=True):
-    concat = Concat_Ice_Daily(directory, assume_gadi)
+def concat_ice_daily(directory=None, assume_gadi=True, client=None):
+    concat = Concat_Ice_Daily(directory, assume_gadi, client=client)
     concat.process()
-    concat.client.close()
+    if concat._owns_client:
+        concat.client.close()
     concat.delete_daily_files()
 
 

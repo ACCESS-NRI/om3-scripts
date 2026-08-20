@@ -6,7 +6,11 @@ import pandas as pd
 from os import makedirs, chdir
 from pathlib import Path
 
-from payu_config.postscript.concat_ice_daily import concat_ice_daily, Concat_Ice_Daily
+from payu_config.postscript.concat_ice_daily import (
+    concat_ice_daily,
+    Concat_Ice_Daily,
+    start_client,
+)
 
 
 def assert_file_exists(p):
@@ -77,6 +81,21 @@ def hist_base(request):
     return str(request.param)
 
 
+@pytest.fixture(scope="module")
+def shared_client():
+    """
+    One dask.distributed.Client shared across every test in this module,
+    rather than each (parametrized) test case creating and tearing down
+    its own. Repeatedly creating/destroying Client/LocalCluster instances
+    within a single process is a known source of event-loop teardown
+    issues in dask.distributed (worse under newer Python versions), so
+    tests inject this shared client instead.
+    """
+    client = start_client(assume_gadi=False)
+    yield client
+    client.close()
+
+
 @pytest.mark.parametrize(
     "hist_dir, ndays, use_dir, nmonths",
     [
@@ -86,7 +105,9 @@ def hist_base(request):
         ("archive/output574", 365, True, 12),
     ],
 )  # run this test with a several folder names and lengths, provide the directory as an argument sometimes
-def test_true_case(hist_dir, ndays, use_dir, nmonths, hist_base, tmp_path):
+def test_true_case(
+    hist_dir, ndays, use_dir, nmonths, hist_base, tmp_path, shared_client
+):
     """
     Run the script to convert the daily data into monthly files, and check the monthly files and the daily files dont exist.
     """
@@ -96,9 +117,9 @@ def test_true_case(hist_dir, ndays, use_dir, nmonths, hist_base, tmp_path):
     output_dir = Path(daily_paths[0]).parents[0]
 
     if not use_dir:  # default path
-        concat_ice_daily(assume_gadi=False)
+        concat_ice_daily(assume_gadi=False, client=shared_client)
     else:  # provide path
-        concat_ice_daily(directory=output_dir, assume_gadi=False)
+        concat_ice_daily(directory=output_dir, assume_gadi=False, client=shared_client)
 
     expected_months = pd.date_range("2010-01-01", freq="ME", periods=nmonths + 1)
 
@@ -118,7 +139,7 @@ def test_true_case(hist_dir, ndays, use_dir, nmonths, hist_base, tmp_path):
 
 
 @pytest.mark.parametrize("hist_dir, ndays", [("Default", 1), ("Default", 30)])
-def test_incomplete_month(hist_dir, ndays, hist_base, tmp_path):
+def test_incomplete_month(hist_dir, ndays, hist_base, tmp_path, shared_client):
     """
     Run the script to convert the daily data into monthly files, with less than 28 days data, and check no things happen.
     """
@@ -129,7 +150,7 @@ def test_incomplete_month(hist_dir, ndays, hist_base, tmp_path):
     output_dir = Path(daily_paths[0]).parents[0]
 
     with pytest.raises(Exception):
-        concat_ice_daily(directory=output_dir, assume_gadi=False)
+        concat_ice_daily(directory=output_dir, assume_gadi=False, client=shared_client)
 
     expected_months = pd.date_range("2010-01-01", freq="ME", periods=1)
     monthly_paths = [
@@ -146,7 +167,9 @@ def test_incomplete_month(hist_dir, ndays, hist_base, tmp_path):
 @pytest.mark.parametrize(
     "hist_dir, ndays", [("Default", 27), ("Default", 31), ("Default", 59)]
 )
-def test_no_del_result_does_not_exist(hist_dir, ndays, hist_base, tmp_path):
+def test_no_del_result_does_not_exist(
+    hist_dir, ndays, hist_base, tmp_path, shared_client
+):
     """
     Run the script to convert the daily data into monthly files, but the output filename already exists with different data.
     In this case, don't delete anything because the monthly and daily data are different.
@@ -170,7 +193,7 @@ def test_no_del_result_does_not_exist(hist_dir, ndays, hist_base, tmp_path):
 
     # run function
     with pytest.raises(Exception):
-        concat_ice_daily(directory=None, assume_gadi=False)
+        concat_ice_daily(directory=None, assume_gadi=False, client=shared_client)
 
     for p in daily_paths:
         assert_file_exists(p)
@@ -186,7 +209,7 @@ def test_no_del_result_does_not_exist(hist_dir, ndays, hist_base, tmp_path):
         (2013, 365, 12, True),  # No leap year
     ],
 )
-def test_leap_year(year, ndays, nmonths, use_dir, hist_base, tmp_path):
+def test_leap_year(year, ndays, nmonths, use_dir, hist_base, tmp_path, shared_client):
     """
     Ensures correctly handles Feb 29 for the leap year and
     Feb 28 for the no-leap year.
@@ -201,9 +224,9 @@ def test_leap_year(year, ndays, nmonths, use_dir, hist_base, tmp_path):
     output_dir = Path(daily_paths[0]).parents[0]
 
     if not use_dir:
-        concat_ice_daily(directory=None, assume_gadi=False)
+        concat_ice_daily(directory=None, assume_gadi=False, client=shared_client)
     else:
-        concat_ice_daily(directory=output_dir, assume_gadi=False)
+        concat_ice_daily(directory=output_dir, assume_gadi=False, client=shared_client)
 
     expected_months = pd.date_range(f"{year}-01-01", freq="ME", periods=nmonths + 1)
     monthly_paths = [
@@ -218,7 +241,7 @@ def test_leap_year(year, ndays, nmonths, use_dir, hist_base, tmp_path):
 
 
 @pytest.mark.parametrize("ndays", [62, 60, 90, 30, 31, 59])
-def test_chunk_and_persist(hist_base, tmp_path, ndays):
+def test_chunk_and_persist(hist_base, tmp_path, ndays, shared_client):
     """
     Ensure daily_ds is correctly chunked and persisted with time chunk size = 31.
     """
@@ -226,7 +249,7 @@ def test_chunk_and_persist(hist_base, tmp_path, ndays):
     daily_paths = dummy_files("Default", hist_base, ndays, tmp_path)
     chdir(tmp_path)
 
-    concat = Concat_Ice_Daily(directory=None, assume_gadi=False)
+    concat = Concat_Ice_Daily(directory=None, assume_gadi=False, client=shared_client)
     daily_ds = concat.daily_ds
 
     assert isinstance(daily_ds["aice"].data, np.ndarray) is False
@@ -237,6 +260,3 @@ def test_chunk_and_persist(hist_base, tmp_path, ndays):
     expected_chunks = (31,) * full_chunks + ((last_chunk,) if last_chunk else ())
 
     assert daily_ds.chunks["time"] == expected_chunks
-
-    # Cleanup
-    concat.client.close()
