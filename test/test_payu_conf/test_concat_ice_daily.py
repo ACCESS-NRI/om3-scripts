@@ -83,14 +83,7 @@ def hist_base(request):
 
 @pytest.fixture(scope="module")
 def shared_client():
-    """
-    One dask.distributed.Client shared across every test in this module,
-    rather than each (parametrized) test case creating and tearing down
-    its own. Repeatedly creating/destroying Client/LocalCluster instances
-    within a single process is a known source of event-loop teardown
-    issues in dask.distributed (worse under newer Python versions), so
-    tests inject this shared client instead.
-    """
+    # One dask.distributed.Client shared across every test in this module,
     client = start_client(assume_gadi=False)
     yield client
     client.close()

@@ -114,9 +114,6 @@ def compare_dataarrays(input_da, expected_da):
 class Concat_Ice_Daily:
 
     def __init__(self, directory=None, assume_gadi=True, client=None):
-        """
-        client: an existing dask.distributed.Client to reuse.
-        """
         if directory is None:
             output_f = glob.glob("archive/output*")
             if not output_f:
