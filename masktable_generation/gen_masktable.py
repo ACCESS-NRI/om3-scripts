@@ -535,17 +535,19 @@ def add_provenance(
     masktable_path.write_text("\n".join(lines[:2] + comments + lines[2:]) + "\n")
 
 
-def module_provenance() -> list[str]:
+def environment_provenance() -> list[str]:
     """
-    Record the modules actually loaded, rather than asserting the documented
-    ones were used.
+    Describe the environment this ran in. Nothing here loads anything: these
+    lines record what was already in the environment, read from LOADEDMODULES.
+
+    The resolved executable paths are the substantive part. They pin the exact
+    build that produced the mask table, which a module name alone does not.
     """
+    lines = ["Environment when generated (a record, not commands to run):"]
+    lines += [f"  {tool}: {shutil.which(tool)}" for tool in REQUIRED_TOOLS]
     loaded = [m for m in os.environ.get("LOADEDMODULES", "").split(":") if m]
-    if loaded:
-        return ["Loaded environment modules:"] + [f"  {m}" for m in loaded]
-    return ["Environment modules (documented; none detected at run time):"] + [
-        f"  {command}" for command in MODULE_COMMANDS
-    ]
+    lines.append(f"  modules: {', '.join(loaded) if loaded else 'none detected'}")
+    return lines
 
 
 def provenance(args, nx: int, ny: int):
@@ -558,7 +560,7 @@ def provenance(args, nx: int, ny: int):
     return [
         history,
         "",
-        *module_provenance(),
+        *environment_provenance(),
         "",
         f"Date: {timestamp}",
         f"hgrid: {args.hgrid}",
