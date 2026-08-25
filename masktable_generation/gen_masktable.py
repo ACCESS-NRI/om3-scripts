@@ -30,6 +30,7 @@
 
 import sys
 import argparse
+import os
 import re
 import math
 from dataclasses import dataclass
@@ -472,23 +473,37 @@ def add_provenance(
     masktable_path.write_text("\n".join(lines[:2] + comments + lines[2:]) + "\n")
 
 
+def module_provenance() -> list[str]:
+    """
+    Record the modules actually loaded, rather than asserting the documented
+    ones were used.
+    """
+    loaded = [m for m in os.environ.get("LOADEDMODULES", "").split(":") if m]
+    if loaded:
+        return ["Loaded environment modules:"] + [f"  {m}" for m in loaded]
+    return ["Environment modules (documented; none detected at run time):"] + [
+        f"  {command}" for command in MODULE_COMMANDS
+    ]
+
+
 def provenance(args, nx: int, ny: int):
     command = shlex.join([sys.executable, *sys.argv])
     history = get_provenance_metadata(
         runcmd=command,
         write_readme_file=False,
     )["history"]
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
     return [
         history,
         "",
-        "Environment modules:",
-        *MODULE_COMMANDS,
+        *module_provenance(),
         "",
         f"Date: {timestamp}",
         f"hgrid: {args.hgrid}",
         f"topog: {args.topog}",
         f"Grid size: {nx} x {ny}",
+        f"periodx: {args.periodx}",
+        f"periody: {args.periody if args.periody is not None else 'unset (aperiodic)'}",
         f"Target model: {args.model}",
     ]
 
