@@ -28,9 +28,41 @@
 #   Minghang Li <minghang.li1@anu.edu.au>
 #   This script was originally developed by Angus Gibson and modified and enhanced by Minghang Li.
 
-from __future__ import annotations
-
 import sys
+
+# Module commands that provide a suitable Python and FRE-NCtools on Gadi.
+# Defined ahead of the remaining imports so the version check below can name
+# the Python ones.
+PYTHON_MODULE_COMMANDS = [
+    "module use /g/data/xp65/public/modules",
+    "module load conda/analysis3",
+]
+
+FRE_NCTOOLS_MODULE_COMMANDS = [
+    "module use /g/data/vk83/modules",
+    "module load model-tools/fre-nctools/2024.05-1",
+]
+
+MODULE_COMMANDS = PYTHON_MODULE_COMMANDS + FRE_NCTOOLS_MODULE_COMMANDS
+
+# The annotations below use PEP 604 unions, which are evaluated when each
+# function is defined, and dataclasses needs 3.7. Gadi's default python3 is
+# 3.6, so say so plainly rather than letting it surface as a TypeError or as a
+# missing-module error. Written without f-strings or a __future__ import so
+# that this check itself parses on any python3.
+MINIMUM_PYTHON = (3, 10)
+if sys.version_info < MINIMUM_PYTHON:
+    sys.exit(
+        "gen_masktable.py requires Python {}.{} or newer, but is running "
+        "under {}.{}.\nLoad a suitable interpreter with:\n{}".format(
+            MINIMUM_PYTHON[0],
+            MINIMUM_PYTHON[1],
+            sys.version_info[0],
+            sys.version_info[1],
+            "\n".join("  " + command for command in PYTHON_MODULE_COMMANDS),
+        )
+    )
+
 import argparse
 import os
 import re
@@ -59,13 +91,6 @@ COARSEN_FACTOR = 2
 
 # FRE-NCtools executables this script drives.
 REQUIRED_TOOLS = ("make_solo_mosaic", "check_mask")
-
-MODULE_COMMANDS = [
-    "module use /g/data/xp65/public/modules",
-    "module load conda/analysis3",
-    "module use /g/data/vk83/modules",
-    "module load model-tools/fre-nctools/2024.05-1",
-]
 
 
 class MasktableError(RuntimeError):
