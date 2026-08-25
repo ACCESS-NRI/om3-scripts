@@ -46,6 +46,13 @@ from scripts_common import get_provenance_metadata
 
 MASKTABLE_PATTERN = re.compile(r"masked=(\d+),\s*layout=(\d+),\s*(\d+)")
 
+MODULE_COMMANDS = [
+    "module use /g/data/xp65/public/modules",
+    "module load conda/analysis3",
+    "module use /g/data/vk83/modules",
+    "module load model-tools/fre-nctools/2024.05-1",
+]
+
 @dataclass(frozen=True)
 class Masktable:
     n_mask: int
@@ -307,6 +314,10 @@ def provenance(args, nx: int, ny: int):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return [
         history,
+        "",
+        "Environment modules:",
+        *MODULE_COMMANDS,
+        "",
         f"Date: {timestamp}",
         f"hgrid: {args.hgrid}",
         f"topog: {args.topog}",
