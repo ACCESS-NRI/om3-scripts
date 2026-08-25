@@ -205,16 +205,31 @@ def check_tools():
         )
 
 
-def copy_input(source: Path | str) -> Path:
-    source = source.resolve()
+def stage_input(source: Path) -> Path:
+    """
+    Make source available in the working directory under its own name, which is
+    what make_solo_mosaic's --dir/--tile_file arguments require.
+
+    A symlink is preferred over a copy: hgrid files are hundreds of MB and
+    nothing here writes to the staged file.
+    """
+    source = Path(source).resolve()
     target = Path.cwd() / source.name
 
     if target.exists() and target.resolve() == source:
         print(f"-- Using {source} in place")
         return target
 
-    print(f"-- Copying {source} to {target}")
-    shutil.copy2(source, target)
+    if target.is_symlink() or target.exists():
+        target.unlink()
+
+    try:
+        target.symlink_to(source)
+        print(f"-- Linking {target} -> {source}")
+    except OSError:
+        print(f"-- Copying {source} to {target}")
+        shutil.copy2(source, target)
+
     return target
 
 
@@ -642,7 +657,7 @@ def main():
 
     # check_mask reads the topog directly, so only the hgrid needs staging:
     # make_solo_mosaic resolves --tile_file relative to --dir.
-    local_hgrid = copy_input(args.hgrid)
+    local_hgrid = stage_input(args.hgrid)
 
     mosaic = make_ocean_mosaic(local_hgrid, args.periodx, args.periody)
     masktables = check_mask(args, mosaic)
