@@ -151,8 +151,10 @@ def parse_args():
 def copy_input(source: Path | str) -> Path:
     source = source.resolve()
     target = Path.cwd() / source.name
-    if source != target:
-        target = Path.cwd() / source.name
+
+    if target.exists() and target.resolve() == source:
+        print(f"-- Using {source} in place")
+        return target
 
     print(f"-- Copying {source} to {target}")
     shutil.copy2(source, target)
