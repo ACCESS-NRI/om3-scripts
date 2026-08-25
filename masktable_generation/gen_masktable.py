@@ -255,7 +255,7 @@ def make_mosaics(
     run(command)
 
 
-def check_mask(args):
+def check_mask(args) -> list:
     command = [
         "check_mask",
         "--grid_file",
@@ -275,15 +275,30 @@ def check_mask(args):
 
     output = run(command, capture_output=True)
 
-    filenames = {
-        Path(f"mask_table.{n_mask}.{layout_x}x{layout_y}")
-        for n_mask, layout_x, layout_y in MASKTABLE_PATTERN.findall(output)
-    }
+    # Sorted so that the reporting below is reproducible from run to run.
+    reported = sorted(
+        {
+            (int(n_mask), int(layout_x), int(layout_y))
+            for n_mask, layout_x, layout_y in MASKTABLE_PATTERN.findall(output)
+        },
+        key=lambda entry: (entry[1] * entry[2], entry[1], entry[0]),
+    )
 
-    if not filenames:
-        raise MasktableError("check_mask did not generate any mask tables.")
+    if not reported:
+        raise MasktableError(
+            "check_mask did not generate any mask tables. No land-only domains "
+            "exist for the requested layout or processor range."
+        )
 
-    return filenames
+    masktables = [Path(f"mask_table.{n}.{x}x{y}") for n, x, y in reported]
+
+    missing = [str(path) for path in masktables if not path.is_file()]
+    if missing:
+        raise MasktableError(
+            "check_mask reported mask tables that do not exist: " + ", ".join(missing)
+        )
+
+    return masktables
 
 
 def read_masktable(filepath: Path) -> Masktable:
@@ -408,7 +423,7 @@ def provenance(args, nx: int, ny: int):
 
 
 def process_mom6_masktables(
-    masktables: list[Path | str],
+    masktables: list,
     nx: int,
     ny: int,
     auto_adjust: bool,
