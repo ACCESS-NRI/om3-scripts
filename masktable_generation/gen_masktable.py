@@ -256,9 +256,7 @@ def grid_size(topog: Path) -> tuple:
         return len(ds.dimensions["nx"]), len(ds.dimensions["ny"])
 
 
-def make_mosaics(
-    hgrid: Path | str, topog: Path | str, periodx: float, periody: float | None
-):
+def make_ocean_mosaic(hgrid: Path, periodx: float, periody: float | None) -> Path:
     command = [
         "make_solo_mosaic",
         "--num_tiles",
@@ -275,13 +273,14 @@ def make_mosaics(
     if periody is not None:
         command.extend(["--periody", periody])
     run(command)
+    return Path("ocean_mosaic.nc")
 
 
-def check_mask(args) -> list:
+def check_mask(args, mosaic: Path) -> list:
     command = [
         "check_mask",
         "--grid_file",
-        "ocean_mosaic.nc",
+        mosaic.name,
         "--ocean_topog",
         args.topog,
     ]
@@ -639,12 +638,14 @@ def main():
     check_tools()
 
     nx, ny = grid_size(args.topog)
+    print(f"-- mom grid size: {nx} x {ny}")
 
+    # check_mask reads the topog directly, so only the hgrid needs staging:
+    # make_solo_mosaic resolves --tile_file relative to --dir.
     local_hgrid = copy_input(args.hgrid)
-    local_topog = copy_input(args.topog)
 
-    make_mosaics(local_hgrid, local_topog, args.periodx, args.periody)
-    masktables = check_mask(args)
+    mosaic = make_ocean_mosaic(local_hgrid, args.periodx, args.periody)
+    masktables = check_mask(args, mosaic)
     common_provenance = provenance(args, nx, ny)
 
     if args.model == "mom5":
