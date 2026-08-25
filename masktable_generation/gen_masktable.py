@@ -559,10 +559,22 @@ def process_mom6_masktables(
                 common_provenance,
                 "mom6 compatibility check: OK (auto-adjusted)",
             )
+            # Stamp the superseded check_mask output so it cannot be picked up
+            # by mistake; it is kept as a record of what check_mask produced.
+            add_provenance(
+                path,
+                common_provenance,
+                f"mom6 compatibility check: FAILED (superseded by {adjusted_path})",
+            )
             protected.add(adjusted_path)
             adjusted_count += 1
         else:
             adjusted_path.unlink()
+            add_provenance(
+                path,
+                common_provenance,
+                "mom6 compatibility check: FAILED (adjusted table failed validation)",
+            )
             unadjusted_count += 1
 
     print("\n-- Mask-masktable generation complete (target model: mom6)")
