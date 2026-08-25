@@ -50,10 +50,11 @@ from scripts_common import get_provenance_metadata
 
 MASKTABLE_PATTERN = re.compile(r"masked=(\d+),\s*layout=(\d+),\s*(\d+)")
 
-# mom6 builds a second, coarsened domain for downsampled diagnostics
-# (create_MOM_domain -> clone_MD_to_d2D(..., coarsen=2)). A layout that does not
-# fit inside the coarsened domain produces zero-sized FMS domains and fails with
-# "MPP_DEFINE_DOMAINS(mpp_compute_extent): domain extents must be positive definite".
+# create_MOM_domain clones every domain it builds at half resolution for
+# downsampled diagnostics (clone_MD_to_d2D(..., coarsen=2)). A layout that does
+# not fit inside the coarsened domain produces zero-sized FMS domains and fails
+# with "MPP_DEFINE_DOMAINS(mpp_compute_extent): domain extents must be positive
+# definite". See mom6_compatibility() for which domain this check applies to.
 COARSEN_FACTOR = 2
 
 # FRE-NCtools executables this script drives.
@@ -394,9 +395,18 @@ def mom6_compatibility(nx: int, ny: int, active_pes: int) -> Compatibility | Non
     factor-2 coarsened global domain. Returns None if active_pes is not a
     usable PE count.
 
-    This assumes mom6 runs with LAYOUT = 0, 0 so that it calls
-    MOM_define_layout(n_global, PEs_used, layout) itself. A configuration that
-    sets LAYOUT explicitly to the mask table's layout uses that layout instead.
+    Whenever a mask table is in use, MOM_domains_init builds a second,
+    unmasked domain for writing out unmasked ocean geometry:
+
+        if (present(MOM_dom_unmasked) .and. mask_table_exists) then
+          call MOM_define_layout(n_global, PEs_used, layout_unmasked)
+          call create_MOM_domain(MOM_dom_unmasked, ..., layout_unmasked, ...)
+
+    PEs_used is num_PEs(), so the layout is derived from the active PE count,
+    and the guard is mask_table_exists rather than LAYOUT: this applies whether
+    or not the configuration sets LAYOUT explicitly. create_MOM_domain then
+    clones that domain with coarsen=2, which is where an oversized layout
+    produces the zero-sized extents described above.
     """
     if active_pes <= 0:
         return None
