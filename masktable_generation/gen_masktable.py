@@ -246,10 +246,31 @@ def check_mask(args):
     return filenames
 
 
-def read_masktable(filepath: Path | str) -> Masktable:
+def read_masktable(filepath: Path) -> Masktable:
+    filepath = Path(filepath)
     lines = filepath.read_text().splitlines()
-    layout_x, layout_y = (int(value.strip()) for value in lines[1].split(","))
-    return Masktable(int(lines[0]), layout_x, layout_y)
+
+    if len(lines) < 2:
+        raise MasktableError(f"{filepath} has fewer than two lines; not a mask table.")
+
+    try:
+        n_mask = int(lines[0].strip())
+        layout_x, layout_y = (int(value.strip()) for value in lines[1].split(","))
+    except ValueError as exc:
+        raise MasktableError(
+            f"Could not parse the header of {filepath}: {exc}"
+        ) from exc
+
+    return Masktable(n_mask, layout_x, layout_y)
+
+
+def read_mask_entries(filepath: Path) -> list:
+    """
+    Return the masked-domain entries, skipping the two header lines and any
+    provenance comments a previous run added.
+    """
+    lines = Path(filepath).read_text().splitlines()
+    return [line for line in lines[2:] if line.strip() and not line.startswith("#")]
 
 
 def mom_define_layout(nx: int, ny: int, npes: int) -> tuple[int, int]:
@@ -270,7 +291,7 @@ def mom6_layout_is_compatible(nx: int, ny: int, active_pes: int) -> bool:
     return unmasked_x <= nx // 2 and unmasked_y <= ny // 2
 
 
-def is_compatible_masktable(masktable_path: Path | str, nx: int, ny: int) -> bool:
+def is_compatible_masktable(masktable_path: Path, nx: int, ny: int) -> bool:
     masktable = read_masktable(masktable_path)
     unmasked_x, unmasked_y = mom_define_layout(nx, ny, masktable.active_pes)
     coarse_nx, coarse_ny = nx // 2, ny // 2
@@ -295,15 +316,14 @@ def find_masktable_mask_count(nx: int, ny: int, masktable: Masktable) -> int | N
     return None
 
 
-def write_adjusted_masktable(masktable_path: Path | str, new_n_mask: int):
+def write_adjusted_masktable(masktable_path: Path, new_n_mask: int) -> Path:
     masktable = read_masktable(masktable_path)
-    lines = masktable_path.read_text().splitlines()
-    mask_entries = [line for line in lines[2:] if line and not line.startswith("#")]
+    entries = read_mask_entries(masktable_path)
     output = Path(f"mask_table.{new_n_mask}.{masktable.layout_x}x{masktable.layout_y}")
     output.write_text(
         "\n".join(
             [str(new_n_mask), f"{masktable.layout_x},{masktable.layout_y}"]
-            + mask_entries[:new_n_mask]
+            + entries[:new_n_mask]
         )
         + "\n"
     )
@@ -311,12 +331,18 @@ def write_adjusted_masktable(masktable_path: Path | str, new_n_mask: int):
 
 
 def add_provenance(
-    masktable_path: Path | str,
+    masktable_path: Path,
     common_provenance: list[str],
     message: str,
 ):
+    """
+    Insert provenance as comments after the two header lines. FMS's
+    parse_mask_table skips records whose first character is '#', so these are
+    ignored by the model (fms/fms_io.F90, parse_mask_table_2d).
+    """
+    masktable_path = Path(masktable_path)
     lines = masktable_path.read_text().splitlines()
-    comments = [f"# {line}" for line in common_provenance + [message]]
+    comments = [f"# {line}".rstrip() for line in common_provenance + [message]]
     masktable_path.write_text("\n".join(lines[:2] + comments + lines[2:]) + "\n")
 
 
