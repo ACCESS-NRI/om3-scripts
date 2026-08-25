@@ -28,6 +28,8 @@
 #   Minghang Li <minghang.li1@anu.edu.au>
 #   This script was originally developed by Angus Gibson and modified and enhanced by Minghang Li.
 
+from __future__ import annotations
+
 import sys
 import argparse
 import os
@@ -270,7 +272,7 @@ def run(command: list, capture_output=False):
     return ""
 
 
-def grid_size(topog: Path) -> tuple:
+def grid_size(topog: Path) -> tuple[int, int]:
     with nc.Dataset(topog) as ds:
         missing = [dim for dim in ("nx", "ny") if dim not in ds.dimensions]
         if missing:
@@ -300,7 +302,7 @@ def make_ocean_mosaic(hgrid: Path, periodx: float, periody: float | None) -> Pat
     return Path("ocean_mosaic.nc")
 
 
-def check_mask(args, mosaic: Path) -> list:
+def check_mask(args, mosaic: Path) -> list[Path]:
     command = [
         "check_mask",
         "--grid_file",
@@ -364,7 +366,7 @@ def read_masktable(filepath: Path) -> Masktable:
     return Masktable(n_mask, layout_x, layout_y)
 
 
-def read_mask_entries(filepath: Path) -> list:
+def read_mask_entries(filepath: Path) -> list[str]:
     """
     Return the masked-domain entries, skipping the two header lines and any
     provenance comments a previous run added.
@@ -386,7 +388,7 @@ def mom_define_layout(nx: int, ny: int, npes: int) -> tuple[int, int]:
     return idiv, npes // idiv
 
 
-def mom6_compatibility(nx: int, ny: int, active_pes: int):
+def mom6_compatibility(nx: int, ny: int, active_pes: int) -> Compatibility | None:
     """
     Test whether the layout mom6 derives from active_pes fits inside the
     factor-2 coarsened global domain. Returns None if active_pes is not a
@@ -408,7 +410,9 @@ def mom6_compatibility(nx: int, ny: int, active_pes: int):
     )
 
 
-def report_compatibility(masktable_path: Path, masktable: Masktable, check) -> bool:
+def report_compatibility(
+    masktable_path: Path, masktable: Masktable, check: Compatibility | None
+) -> bool:
     print(f"\n-- mom6 compatibility check: {masktable_path}")
     print(f"   Logical layout: {masktable.layout_x} x {masktable.layout_y}")
     print(f"   Total logical domains: {masktable.total_domain}")
@@ -448,7 +452,7 @@ def find_masktable_mask_count(nx: int, ny: int, masktable: Masktable) -> int | N
 
 
 def write_adjusted_masktable(
-    masktable_path: Path, new_n_mask: int, protected: set
+    masktable_path: Path, new_n_mask: int, protected: set[Path]
 ) -> Path:
     masktable = read_masktable(masktable_path)
     entries = read_mask_entries(masktable_path)
@@ -546,7 +550,7 @@ def rerun_hint(args) -> str:
 
 
 def process_mom6_masktables(
-    masktables: list,
+    masktables: list[Path],
     nx: int,
     ny: int,
     args,
