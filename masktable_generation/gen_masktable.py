@@ -47,6 +47,12 @@ from scripts_common import get_provenance_metadata
 
 MASKTABLE_PATTERN = re.compile(r"masked=(\d+),\s*layout=(\d+),\s*(\d+)")
 
+# mom6 builds a second, coarsened domain for downsampled diagnostics
+# (create_MOM_domain -> clone_MD_to_d2D(..., coarsen=2)). A layout that does not
+# fit inside the coarsened domain produces zero-sized FMS domains and fails with
+# "MPP_DEFINE_DOMAINS(mpp_compute_extent): domain extents must be positive definite".
+COARSEN_FACTOR = 2
+
 # FRE-NCtools executables this script drives.
 REQUIRED_TOOLS = ("make_solo_mosaic", "check_mask")
 
@@ -75,6 +81,21 @@ class Masktable:
     @property
     def active_pes(self):
         return self.total_domain - self.n_mask
+
+
+@dataclass(frozen=True)
+class Compatibility:
+    """The outcome of the mom6 compatibility test for a given active PE count."""
+
+    active_pes: int
+    unmasked_x: int
+    unmasked_y: int
+    coarse_nx: int
+    coarse_ny: int
+
+    @property
+    def compatible(self) -> bool:
+        return self.unmasked_x <= self.coarse_nx and self.unmasked_y <= self.coarse_ny
 
 
 def parse_args():
@@ -333,40 +354,63 @@ def mom_define_layout(nx: int, ny: int, npes: int) -> tuple[int, int]:
     Reproduce mom6's MOM_define_layout() for a positive PE count.
     https://github.com/ACCESS-NRI/MOM6/blob/6432010e3ab29df43994adabb413b69fe718d94c/src/framework/MOM_domains.F90#L466-L486
     """
+    if npes < 1:
+        raise ValueError(f"npes must be positive, got {npes}.")
     idiv = max(math.floor(math.sqrt(npes * nx / ny) + 0.5), 1)
     while npes % idiv:
         idiv -= 1
     return idiv, npes // idiv
 
 
-def mom6_layout_is_compatible(nx: int, ny: int, active_pes: int) -> bool:
+def mom6_compatibility(nx: int, ny: int, active_pes: int):
+    """
+    Test whether the layout mom6 derives from active_pes fits inside the
+    factor-2 coarsened global domain. Returns None if active_pes is not a
+    usable PE count.
+
+    This assumes mom6 runs with LAYOUT = 0, 0 so that it calls
+    MOM_define_layout(n_global, PEs_used, layout) itself. A configuration that
+    sets LAYOUT explicitly to the mask table's layout uses that layout instead.
+    """
     if active_pes <= 0:
-        return False
+        return None
     unmasked_x, unmasked_y = mom_define_layout(nx, ny, active_pes)
-    return unmasked_x <= nx // 2 and unmasked_y <= ny // 2
+    return Compatibility(
+        active_pes,
+        unmasked_x,
+        unmasked_y,
+        nx // COARSEN_FACTOR,
+        ny // COARSEN_FACTOR,
+    )
 
 
-def is_compatible_masktable(masktable_path: Path, nx: int, ny: int) -> bool:
-    masktable = read_masktable(masktable_path)
-    unmasked_x, unmasked_y = mom_define_layout(nx, ny, masktable.active_pes)
-    coarse_nx, coarse_ny = nx // 2, ny // 2
-    compatible = unmasked_x <= coarse_nx and unmasked_y <= coarse_ny
-
+def report_compatibility(masktable_path: Path, masktable: Masktable, check) -> bool:
     print(f"\n-- mom6 compatibility check: {masktable_path}")
     print(f"   Logical layout: {masktable.layout_x} x {masktable.layout_y}")
     print(f"   Total logical domains: {masktable.total_domain}")
     print(f"   Masked land domains: {masktable.n_mask}")
     print(f"   Active PEs: {masktable.active_pes}")
-    print(f"   mom6 unmasked layout: {unmasked_x} x {unmasked_y}")
-    print(f"   Coarsened global domain: {coarse_nx} x {coarse_ny}")
-    print(f"   mom6 compatibility: {'OK' if compatible else 'FAILED'}")
-    return compatible
+
+    if check is None:
+        print("   mom6 compatibility: FAILED (no active PEs remain)")
+        return False
+
+    print(f"   mom6 unmasked layout: {check.unmasked_x} x {check.unmasked_y}")
+    print(f"   Coarsened global domain: {check.coarse_nx} x {check.coarse_ny}")
+    print(f"   mom6 compatibility: {'OK' if check.compatible else 'FAILED'}")
+    return check.compatible
+
+
+def is_compatible_masktable(masktable_path: Path, nx: int, ny: int) -> bool:
+    masktable = read_masktable(masktable_path)
+    check = mom6_compatibility(nx, ny, masktable.active_pes)
+    return report_compatibility(masktable_path, masktable, check)
 
 
 def find_masktable_mask_count(nx: int, ny: int, masktable: Masktable) -> int | None:
     for n_mask in range(masktable.n_mask, -1, -1):
-        active_pes = masktable.total_domain - n_mask
-        if mom6_layout_is_compatible(nx, ny, active_pes):
+        check = mom6_compatibility(nx, ny, masktable.total_domain - n_mask)
+        if check is not None and check.compatible:
             return n_mask
     return None
 
