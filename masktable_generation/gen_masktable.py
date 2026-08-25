@@ -408,7 +408,15 @@ def is_compatible_masktable(masktable_path: Path, nx: int, ny: int) -> bool:
 
 
 def find_masktable_mask_count(nx: int, ny: int, masktable: Masktable) -> int | None:
-    for n_mask in range(masktable.n_mask, -1, -1):
+    """
+    Largest number of masked domains, at most masktable.n_mask, whose active PE
+    count gives a mom6-compatible layout. Masking fewer domains keeps more
+    land-only PEs, so the search runs downwards to minimise that overhead.
+
+    Stops at one masked domain: a mask table that masks nothing is pointless,
+    and check_mask never writes one.
+    """
+    for n_mask in range(masktable.n_mask, 0, -1):
         check = mom6_compatibility(nx, ny, masktable.total_domain - n_mask)
         if check is not None and check.compatible:
             return n_mask
