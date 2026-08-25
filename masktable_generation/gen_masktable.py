@@ -493,13 +493,28 @@ def provenance(args, nx: int, ny: int):
     ]
 
 
+def rerun_hint(args) -> str:
+    selection = (
+        f"-l {args.layout[0]} {args.layout[1]}"
+        if args.layout
+        else f"-r {args.processor_range[0]} {args.processor_range[1]}"
+    )
+    return (
+        f"  {Path(sys.argv[0]).name} \\\n"
+        f"      -g {args.hgrid} \\\n"
+        f"      -t {args.topog} \\\n"
+        f"      {selection} -m {args.model} -a"
+    )
+
+
 def process_mom6_masktables(
     masktables: list,
     nx: int,
     ny: int,
-    auto_adjust: bool,
+    args,
     common_provenance: list[str],
 ):
+    auto_adjust = args.auto_adjust
     protected = set(masktables)
 
     compatible_count = 0
@@ -539,6 +554,10 @@ def process_mom6_masktables(
         )
         print(f"      Compatible unmasked layout: {unmasked_x} x {unmasked_y}")
         print(f"      Approximate processor overhead: {overhead:.3f}%")
+        print(
+            "      NOTE: the overhead is the extra allocation from retaining\n"
+            "      land-only PEs, not an estimate of wall-clock performance loss."
+        )
 
         if not auto_adjust:
             add_provenance(
@@ -586,10 +605,17 @@ def process_mom6_masktables(
     if unadjusted_count:
         print(f"Could not adjust: {unadjusted_count}")
 
-    if (not auto_adjust and incompatible_count) or unadjusted_count:
+    if not auto_adjust and incompatible_count:
         raise MasktableError(
-            "Some mask tables are incompatible with mom6. "
-            "Please enable the auto-adjust option (-a)."
+            "Some mask tables are incompatible with mom6.\n"
+            "Re-run with the auto-adjust option (-a) to generate adjusted tables:\n"
+            + rerun_hint(args)
+        )
+
+    if unadjusted_count:
+        raise MasktableError(
+            f"{unadjusted_count} mask table(s) could not be made compatible with mom6. "
+            "Choose a different layout or processor range."
         )
 
 
@@ -619,9 +645,7 @@ def main():
             print(f"Generated mask masktable: {path}")
         return
 
-    return process_mom6_masktables(
-        masktables, nx, ny, args.auto_adjust, common_provenance
-    )
+    process_mom6_masktables(masktables, nx, ny, args, common_provenance)
 
 
 if __name__ == "__main__":
