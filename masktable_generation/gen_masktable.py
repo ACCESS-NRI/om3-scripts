@@ -18,6 +18,8 @@
 # 4. Processor range specification (mom6):
 #   python3 gen_masktable.py -g path/to/hgrid.nc -t path/to/topog.nc -r MIN MAX -m mom6 -a
 #
+# Requires FRE-NCtools (make_solo_mosaic, check_mask) on $PATH; see MODULE_COMMANDS below.
+#
 # For more details, see
 #   1. https://github.com/COSIMA/mom6-panan/wiki/Preparing-inputs-for-a-new-configuration
 #   2. https://github.com/ACCESS-NRI/mom6/issues/42#issuecomment-5337278337
@@ -44,6 +46,9 @@ sys.path.append(str(path_root))
 from scripts_common import get_provenance_metadata
 
 MASKTABLE_PATTERN = re.compile(r"masked=(\d+),\s*layout=(\d+),\s*(\d+)")
+
+# FRE-NCtools executables this script drives.
+REQUIRED_TOOLS = ("make_solo_mosaic", "check_mask")
 
 MODULE_COMMANDS = [
     "module use /g/data/xp65/public/modules",
@@ -139,13 +144,43 @@ def parse_args():
         "-y",
         "--periody",
         type=float,
-        help="Periodicity in the Y direction (default: 180.0).",
+        help="Periodicity in the Y direction (default: unset, i.e. aperiodic in Y).",
     )
 
     args = parser.parse_args()
+
     if args.model == "mom5" and args.auto_adjust:
         parser.error("Auto-adjust '-a' option is not applicable for mom5.")
+
+    for name in ("hgrid", "topog"):
+        path = getattr(args, name)
+        if not path.is_file():
+            parser.error(f"--{name} is not an existing file: {path}")
+        setattr(args, name, path.resolve())
+
+    if args.layout and any(value <= 0 for value in args.layout):
+        parser.error("--layout X Y requires positive integers.")
+
+    if args.processor_range:
+        min_proc, max_proc = args.processor_range
+        if min_proc <= 0 or max_proc <= 0:
+            parser.error("--processor-range MIN MAX requires positive integers.")
+        if min_proc > max_proc:
+            parser.error("--processor-range MIN must not exceed MAX.")
+
     return args
+
+
+def check_tools():
+    """Fail early, and helpfully, when FRE-NCtools is not on $PATH."""
+    missing = [tool for tool in REQUIRED_TOOLS if shutil.which(tool) is None]
+    if missing:
+        raise MasktableError(
+            "Could not find the FRE-NCtools executable(s): "
+            + ", ".join(missing)
+            + "\nLoad them with:\n"
+            + "\n".join(f"  {command}" for command in MODULE_COMMANDS)
+        )
 
 
 def copy_input(source: Path | str) -> Path:
@@ -189,8 +224,13 @@ def run(command: list, capture_output=False):
     return ""
 
 
-def grid_size(topog: Path | str) -> tuple[int, int]:
+def grid_size(topog: Path) -> tuple:
     with nc.Dataset(topog) as ds:
+        missing = [dim for dim in ("nx", "ny") if dim not in ds.dimensions]
+        if missing:
+            raise MasktableError(
+                f"{topog} has no {' or '.join(missing)} dimension; is it a topog file?"
+            )
         return len(ds.dimensions["nx"]), len(ds.dimensions["ny"])
 
 
@@ -454,6 +494,8 @@ def process_mom6_masktables(
 
 def main():
     args = parse_args()
+    check_tools()
+
     nx, ny = grid_size(args.topog)
 
     local_hgrid = copy_input(args.hgrid)
