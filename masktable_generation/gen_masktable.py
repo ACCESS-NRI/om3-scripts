@@ -53,6 +53,10 @@ MODULE_COMMANDS = [
 ]
 
 
+class MasktableError(RuntimeError):
+    """An error that should be reported to the user without a traceback."""
+
+
 @dataclass(frozen=True)
 class Masktable:
     n_mask: int
@@ -155,14 +159,26 @@ def copy_input(source: Path | str) -> Path:
     return target
 
 
-def run(command: list[str], capture_output=False):
-    res = subprocess.run(
-        [str(c) for c in command],
-        check=True,
-        text=True,
-        stdout=subprocess.PIPE if capture_output else None,
-        stderr=subprocess.STDOUT if capture_output else None,
-    )
+def run(command: list, capture_output=False):
+    command = [str(c) for c in command]
+    print(f"-- Running: {shlex.join(command)}")
+
+    try:
+        res = subprocess.run(
+            command,
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE if capture_output else None,
+            stderr=subprocess.STDOUT if capture_output else None,
+        )
+    except subprocess.CalledProcessError as exc:
+        # With capture_output the tool's diagnostics are in exc.output, which
+        # would otherwise be swallowed along with the reason for the failure.
+        if exc.output:
+            print(exc.output, end="")
+        raise MasktableError(
+            f"{command[0]} failed with exit code {exc.returncode}."
+        ) from exc
 
     if capture_output:
         print(res.stdout, end="")
@@ -223,7 +239,7 @@ def check_mask(args):
     }
 
     if not filenames:
-        raise RuntimeError("check_mask did not generate any mask tables.")
+        raise MasktableError("check_mask did not generate any mask tables.")
 
     return filenames
 
@@ -402,7 +418,7 @@ def process_mom6_masktables(
         print(f"Could not adjust: {unadjusted_count}")
 
     if (not auto_adjust and incompatible_count) or unadjusted_count:
-        raise RuntimeError(
+        raise MasktableError(
             "Some mask tables are incompatible with mom6. "
             "Please enable the auto-adjust option (-a)."
         )
@@ -438,4 +454,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except MasktableError as exc:
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
