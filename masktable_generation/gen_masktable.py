@@ -38,7 +38,6 @@ import netCDF4 as nc
 import shlex
 from datetime import datetime
 
-
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
@@ -53,6 +52,7 @@ MODULE_COMMANDS = [
     "module load model-tools/fre-nctools/2024.05-1",
 ]
 
+
 @dataclass(frozen=True)
 class Masktable:
     n_mask: int
@@ -62,7 +62,7 @@ class Masktable:
     @property
     def total_domain(self):
         return self.layout_x * self.layout_y
-    
+
     @property
     def active_pes(self):
         return self.total_domain - self.n_mask
@@ -167,7 +167,7 @@ def run(command: list[str], capture_output=False):
     if capture_output:
         print(res.stdout, end="")
         return res.stdout
-    
+
     return ""
 
 
@@ -177,10 +177,7 @@ def grid_size(topog: Path | str) -> tuple[int, int]:
 
 
 def make_mosaics(
-    hgrid: Path | str,
-    topog: Path | str,
-    periodx: float,
-    periody: float | None
+    hgrid: Path | str, topog: Path | str, periodx: float, periody: float | None
 ):
     command = [
         "make_solo_mosaic",
@@ -343,7 +340,7 @@ def process_mom6_masktables(
             add_provenance(path, common_provenance, "mom6 compatibility check: OK")
             compatible_count += 1
             continue
-        
+
         incompatible_count += 1
         masktable = read_masktable(path)
         compatible_n_mask = find_masktable_mask_count(nx, ny, masktable)
@@ -351,7 +348,7 @@ def process_mom6_masktables(
             add_provenance(
                 path,
                 common_provenance,
-                "mom6 compatibility check: FAILED (no compatible mask count found)"
+                "mom6 compatibility check: FAILED (no compatible mask count found)",
             )
             unadjusted_count += 1
             continue
@@ -365,7 +362,9 @@ def process_mom6_masktables(
         print(f"      Compatible masked domains: {compatible_n_mask}")
         print(f"      Original active PEs: {masktable.active_pes}")
         print(f"      Compatible active PEs: {compatible_active_pes}")
-        print(f"      Extra retained land-only PEs: {compatible_active_pes - masktable.active_pes}")
+        print(
+            f"      Extra retained land-only PEs: {compatible_active_pes - masktable.active_pes}"
+        )
         print(f"      Compatible unmasked layout: {unmasked_x} x {unmasked_y}")
         print(f"      Approximate processor overhead: {overhead:.3f}%")
 
@@ -373,12 +372,14 @@ def process_mom6_masktables(
             add_provenance(
                 path,
                 common_provenance,
-                "mom6 compatibility check: FAILED (auto-adjust not enabled)"
+                "mom6 compatibility check: FAILED (auto-adjust not enabled)",
             )
             continue
 
         adjusted_path = write_adjusted_masktable(path, compatible_n_mask)
-        print(f"      *Generated adjusted mom6-compatible mask masktable: {adjusted_path}")
+        print(
+            f"      *Generated adjusted mom6-compatible mask masktable: {adjusted_path}"
+        )
 
         if is_compatible_masktable(adjusted_path, nx, ny):
             add_provenance(
@@ -420,14 +421,20 @@ def main():
 
     if args.model == "mom5":
         for path in masktables:
-            add_provenance(path, common_provenance, "mom6 compatibility check skipped (target model: mom5)")
+            add_provenance(
+                path,
+                common_provenance,
+                "mom6 compatibility check skipped (target model: mom5)",
+            )
 
         print("-- Mask-masktable generation complete (target model: mom5)")
         for path in masktables:
             print(f"Generated mask masktable: {path}")
         return
 
-    return process_mom6_masktables(masktables, nx, ny, args.auto_adjust, common_provenance)
+    return process_mom6_masktables(
+        masktables, nx, ny, args.auto_adjust, common_provenance
+    )
 
 
 if __name__ == "__main__":
