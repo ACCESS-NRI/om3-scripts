@@ -92,6 +92,10 @@ COARSEN_FACTOR = 2
 # FRE-NCtools executables this script drives.
 REQUIRED_TOOLS = ("make_solo_mosaic", "check_mask")
 
+# Written by make_solo_mosaic into the output directory.
+# It exists only to be handed to check_mask, and is removed once that is done.
+OCEAN_MOSAIC = Path("ocean_mosaic.nc")
+
 
 class MasktableError(RuntimeError):
     """An error that should be reported to the user without a traceback."""
@@ -179,7 +183,8 @@ def parse_args():
         "-a",
         "--auto-adjust",
         action="store_true",
-        help="Adjust incompatible mask tables only for mom6",
+        help="Adjust mask tables for compatibility with mom6 by unmasking land-only domains"
+        " and discard the ones that cannot be used (mom6 only).",
     )
 
     parser.add_argument(
@@ -242,20 +247,23 @@ def check_tools():
         )
 
 
-def stage_input(source: Path) -> Path:
+def stage_input(source: Path) -> tuple[Path, bool]:
     """
     Make source available in the working directory under its own name, which is
     what make_solo_mosaic's --dir/--tile_file arguments require.
 
     A symlink is preferred over a copy: hgrid files are hundreds of MB and
     nothing here writes to the staged file.
+
+    Returns the staged path and whether this call created it hence cleanup
+    removes only what this run introduced and never the user's own file.
     """
     source = Path(source).resolve()
     target = Path.cwd() / source.name
 
     if target.exists() and target.resolve() == source:
         print(f"-- Using {source} in place")
-        return target
+        return target, False
 
     if target.is_symlink() or target.exists():
         target.unlink()
@@ -267,7 +275,21 @@ def stage_input(source: Path) -> Path:
         print(f"-- Copying {source} to {target}")
         shutil.copy2(source, target)
 
-    return target
+    return target, True
+
+
+def cleanup_intermediates(paths: list[Path]):
+    """
+    Remove the staging artefacts this run created.
+    """
+    for path in paths:
+        if not (path.exists() or path.is_symlink()):
+            continue
+        try:
+            path.unlink()
+            print(f"\n-- Removed intermediate: {path}")
+        except OSError as exc:
+            print(f"\n-- Could not remove intermediate {path}: {exc}", file=sys.stderr)
 
 
 def run(command: list, capture_output=False):
@@ -316,7 +338,7 @@ def make_ocean_mosaic(hgrid: Path, periodx: float, periody: float | None) -> Pat
         "--dir",
         ".",
         "--mosaic_name",
-        "ocean_mosaic",
+        OCEAN_MOSAIC.stem,
         "--tile_file",
         hgrid.name,
         "--periodx",
@@ -325,7 +347,7 @@ def make_ocean_mosaic(hgrid: Path, periodx: float, periody: float | None) -> Pat
     if periody is not None:
         command.extend(["--periody", periody])
     run(command)
-    return Path("ocean_mosaic.nc")
+    return OCEAN_MOSAIC
 
 
 def check_mask(args, mosaic: Path) -> list[Path]:
@@ -486,6 +508,14 @@ def find_masktable_mask_count(nx: int, ny: int, masktable: Masktable) -> int | N
     return None
 
 
+def discard_masktable(path: Path, reason: str):
+    """
+    Remove a mask table mom6 cannot use.
+    """
+    path.unlink()
+    print(f"      Removed unusable mask table: {path} ({reason})")
+
+
 def write_adjusted_masktable(
     masktable_path: Path, new_n_mask: int, protected: set[Path]
 ) -> Path:
@@ -535,21 +565,6 @@ def add_provenance(
     masktable_path.write_text("\n".join(lines[:2] + comments + lines[2:]) + "\n")
 
 
-def environment_provenance() -> list[str]:
-    """
-    Describe the environment this ran in. Nothing here loads anything: these
-    lines record what was already in the environment, read from LOADEDMODULES.
-
-    The resolved executable paths are the substantive part. They pin the exact
-    build that produced the mask table, which a module name alone does not.
-    """
-    lines = ["Environment when generated (a record, not commands to run):"]
-    lines += [f"  {tool}: {shutil.which(tool)}" for tool in REQUIRED_TOOLS]
-    loaded = [m for m in os.environ.get("LOADEDMODULES", "").split(":") if m]
-    lines.append(f"  modules: {', '.join(loaded) if loaded else 'none detected'}")
-    return lines
-
-
 def provenance(args, nx: int, ny: int):
     command = shlex.join([sys.executable, *sys.argv])
     history = get_provenance_metadata(
@@ -559,8 +574,6 @@ def provenance(args, nx: int, ny: int):
     timestamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
     return [
         history,
-        "",
-        *environment_provenance(),
         "",
         f"Date: {timestamp}",
         f"hgrid: {args.hgrid}",
@@ -600,6 +613,7 @@ def process_mom6_masktables(
     incompatible_count = 0
     adjusted_count = 0
     unadjusted_count = 0
+    removed_count = 0
 
     for path in masktables:
         if is_compatible_masktable(path, nx, ny):
@@ -611,11 +625,15 @@ def process_mom6_masktables(
         masktable = read_masktable(path)
         compatible_n_mask = find_masktable_mask_count(nx, ny, masktable)
         if compatible_n_mask is None:
-            add_provenance(
-                path,
-                common_provenance,
-                "mom6 compatibility check: FAILED (no compatible mask count found)",
-            )
+            if auto_adjust:
+                discard_masktable(path, "no compatible mask count found")
+                removed_count += 1
+            else:
+                add_provenance(
+                    path,
+                    common_provenance,
+                    "mom6 compatibility check: FAILED (no compatible mask count found)",
+                )
             unadjusted_count += 1
             continue
 
@@ -655,32 +673,26 @@ def process_mom6_masktables(
             add_provenance(
                 adjusted_path,
                 common_provenance,
-                "mom6 compatibility check: OK (auto-adjusted)",
+                f"mom6 compatibility check: OK (auto-adjusted from {path.name}: "
+                f"{masktable.n_mask} -> {compatible_n_mask} masked domains)",
             )
-            # Stamp the superseded check_mask output so it cannot be picked up
-            # by mistake; it is kept as a record of what check_mask produced.
-            add_provenance(
-                path,
-                common_provenance,
-                f"mom6 compatibility check: FAILED (superseded by {adjusted_path})",
-            )
+            discard_masktable(path, f"superseded by {adjusted_path}")
+            removed_count += 1
             protected.add(adjusted_path)
             adjusted_count += 1
         else:
             adjusted_path.unlink()
-            add_provenance(
-                path,
-                common_provenance,
-                "mom6 compatibility check: FAILED (adjusted table failed validation)",
-            )
+            discard_masktable(path, "adjusted table failed validation")
+            removed_count += 1
             unadjusted_count += 1
 
-    print("\n-- Mask-masktable generation complete (target model: mom6)")
+    print("\n-- Masktable generation complete (target model: mom6)")
     print(f"Generated by check_mask: {len(masktables)}")
     print(f"Already mom6-compatible: {compatible_count}")
     print(f"Initially incompatible: {incompatible_count}")
     if auto_adjust:
         print(f"Automatically adjusted: {adjusted_count}")
+        print(f"Removed as unusable: {removed_count}")
     if unadjusted_count:
         print(f"Could not adjust: {unadjusted_count}")
 
@@ -708,26 +720,30 @@ def main():
     nx, ny = grid_size(args.topog)
     print(f"-- mom grid size: {nx} x {ny}")
 
-    # check_mask reads the topog directly, so only the hgrid needs staging:
-    # make_solo_mosaic resolves --tile_file relative to --dir.
-    local_hgrid = stage_input(args.hgrid)
+    # check_mask reads the topog directly, so only the hgrid needs staging
+    local_hgrid, hgrid_staged = stage_input(args.hgrid)
 
-    mosaic = make_ocean_mosaic(local_hgrid, args.periodx, args.periody)
-    masktables = check_mask(args, mosaic)
-    common_provenance = provenance(args, nx, ny)
+    intermediates = ([local_hgrid] if hgrid_staged else []) + [OCEAN_MOSAIC]
 
-    if args.model == "mom5":
-        print("\n-- Mask-masktable generation complete (target model: mom5)")
-        for path in masktables:
-            add_provenance(
-                path,
-                common_provenance,
-                "mom6 compatibility check skipped (target model: mom5)",
-            )
-            print(f"Generated mask masktable: {path}")
-        return
+    try:
+        mosaic = make_ocean_mosaic(local_hgrid, args.periodx, args.periody)
+        masktables = check_mask(args, mosaic)
+        common_provenance = provenance(args, nx, ny)
 
-    process_mom6_masktables(masktables, nx, ny, args, common_provenance)
+        if args.model == "mom5":
+            print("\n-- Masktable generation complete (target model: mom5)")
+            for path in masktables:
+                add_provenance(
+                    path,
+                    common_provenance,
+                    "mom6 compatibility check skipped (target model: mom5)",
+                )
+                print(f"Generated mask masktable: {path}")
+            return
+
+        process_mom6_masktables(masktables, nx, ny, args, common_provenance)
+    finally:
+        cleanup_intermediates(intermediates)
 
 
 if __name__ == "__main__":
