@@ -676,15 +676,13 @@ def main():
     common_provenance = provenance(args, nx, ny)
 
     if args.model == "mom5":
+        print("\n-- Mask-masktable generation complete (target model: mom5)")
         for path in masktables:
             add_provenance(
                 path,
                 common_provenance,
                 "mom6 compatibility check skipped (target model: mom5)",
             )
-
-        print("-- Mask-masktable generation complete (target model: mom5)")
-        for path in masktables:
             print(f"Generated mask masktable: {path}")
         return
 
