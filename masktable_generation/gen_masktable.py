@@ -169,6 +169,14 @@ def parse_args():
         help="Periodicity in the Y direction (default: unset, i.e. aperiodic in Y).",
     )
 
+    parser.add_argument(
+        "-o",
+        "--output-dir",
+        type=Path,
+        default=Path.cwd(),
+        help="Directory to write the mosaic and mask tables into (default: cwd).",
+    )
+
     args = parser.parse_args()
 
     if args.model == "mom5" and args.auto_adjust:
@@ -178,6 +186,7 @@ def parse_args():
         path = getattr(args, name)
         if not path.is_file():
             parser.error(f"--{name} is not an existing file: {path}")
+        # Resolve before the working directory changes to the output directory.
         setattr(args, name, path.resolve())
 
     if args.layout and any(value <= 0 for value in args.layout):
@@ -651,6 +660,9 @@ def process_mom6_masktables(
 def main():
     args = parse_args()
     check_tools()
+
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    os.chdir(args.output_dir)
 
     nx, ny = grid_size(args.topog)
     print(f"-- mom grid size: {nx} x {ny}")
