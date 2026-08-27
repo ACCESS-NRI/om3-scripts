@@ -95,7 +95,11 @@ def start_client(assume_gadi=True):
             local_directory=jobfs,
         )
     else:
-        client = Client(threads_per_worker=1, n_workers=1)
+        client = Client(
+            threads_per_worker=1,
+            n_workers=1,
+            processes=False,
+        )
 
     def set_env():
         os.environ["PYTHONNOUSERSITE"] = "True"
