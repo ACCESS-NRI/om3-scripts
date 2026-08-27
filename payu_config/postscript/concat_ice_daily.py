@@ -99,7 +99,7 @@ def start_client(assume_gadi=True):
             threads_per_worker=1,
             n_workers=1,
             processes=False,
-            )
+        )
 
     def set_env():
         os.environ["PYTHONNOUSERSITE"] = "True"
