@@ -86,10 +86,7 @@ def shared_client():
     # One dask.distributed.Client shared across every test in this module,
     client = start_client(assume_gadi=False)
     yield client
-    try:
-        client.close()
-    except:
-        pass
+    client.close()
 
 
 @pytest.mark.parametrize(
