@@ -1,26 +1,30 @@
-# Copyright 2025 ACCESS-NRI and contributors. See the top-level COPYRIGHT file for details.
+# Copyright 2025 ACCESS-NRI and contributors. See the top-level COPYRIGHT file for
+# details.
 # SPDX-License-Identifier: Apache-2.0
 
 # =========================================================================================
 # Generate remapping weights from an ESMF mesh file for remapping a runoff field
-# from an unmasked mesh to a masked mesh without losing any water volume. Each field is mapped to
-# - nearby ocean cells, with weights generated with exponential decay if source cell is near a large
-# volume river, otherwise
+# from an unmasked mesh to a masked mesh without losing any water volume. Each field
+# is mapped to
+# - nearby ocean cells, with weights generated with exponential decay if source cell
+# is near a large volume river, otherwise
 # - the nearest ocean cell.
 #
 # To run:
-#   python generate_rof_weights.py --mesh_filename=<input_file> --weights_filename=<output_file>
+#   python generate_rof_weights.py --mesh_filename=<input_file>
+#     --weights_filename=<output_file>
 #
 # This script currently supports mesh files in the ESMF unstructed mesh format.
 #
-# There is not enough memory on the gadi login node to run this, its simplest to run in
-# a terminal through are.nci.org.au
+# There is not enough memory on the gadi login node to run this, its simplest to run
+# in a terminal through are.nci.org.au
 #
-# The run command and full github url of the current version of this script is added to the
-# metadata of the generated weights file. This is to uniquely identify the script and inputs used
-# to generate the mesh file. To produce weights files for sharing, ensure you are using a version
-# of this script which is committed and pushed to github. For mesh files intended for released
-# configurations, use the latest version checked in to the main branch of the github repository.
+# The run command and full github url of the current version of this script is added
+# to the metadata of the generated weights file. This is to uniquely identify the
+# script and inputs used to generate the mesh file. To produce weights files for
+# sharing, ensure you are using a version of this script which is committed and
+# pushed to github. For mesh files intended for released configurations, use the
+# latest version checked in to the main branch of the github repository.
 #
 # Contact:
 #   Anton Steketee <anton.steketee@anu.edu.au>
@@ -88,18 +92,27 @@ def mesh_area(mesh_filename):
 
 class Rof_Remapping_Weights:
 
-    def __init__(self, mesh_filename, weights_filename, nx, ny, spread):
-        # We need to generate remapping weights for use in the mediator, such that the overall volume of runoff is conserved
-        # and no runoff is mapped onto land cells. Inside the mediator, the grid doesn't change as we run the mediator with
-        # the ocean grid (the DROF component does the remapping from JRA grid to mediator grid). Therefore we use the
-        # same _mesh_file for the input and output mesh, however this same function would work for differing input and
-        # output meshes
+    def __init__(
+        self, mesh_filename, weights_filename, nx, ny, spread, input_mesh_filename=None
+    ):
+        # We need to generate remapping weights for use in the mediator, such that
+        # the overall volume of runoff is conserved and no runoff is mapped onto
+        # land cells. Inside the mediator,
+        # For OM3: the grid doesn't change as we run the mediator with
+        # the ocean grid (the DROF component does the remapping from JRA grid to
+        # mediator grid). Therefore input_mesh_filename defaults to mesh_filename
+        # For CM3, the input_mesh_filename can be set to a different mesh if
+        # the source (unmasked, runoff-providing) grid  (aka the UM) differs from
+        # the destination (masked, ocean) grid.
 
         self.mesh_filename = mesh_filename
         self.mesh_ds = xr.open_dataset(mesh_filename)
 
         if len(self.mesh_ds.elementMask) != ny * nx:
             raise RuntimeError("ny * nx does not equal number of elements in mesh file")
+
+        self.input_mesh_filename = input_mesh_filename or mesh_filename
+        self.input_mesh_ds = xr.open_dataset(self.input_mesh_filename)
 
         self.ny = ny
         self.nx = nx
@@ -108,8 +121,8 @@ class Rof_Remapping_Weights:
 
     def target_masks(self):
         """
-        create masks for where runoff can be placed when being placed at coast (nospread)
-        or being spread
+        create masks for where runoff can be placed when being placed at coast
+        (nospread) or being spread
         """
         # make new mask of land plus one adjacent cell of ocean
         ocn_mask = self.mesh_ds.elementMask.values == 1
@@ -129,12 +142,12 @@ class Rof_Remapping_Weights:
         create mask of cells within a small range of points to be spread
         these are cells which should be spread
         """
-        spread_mask = np.zeros_like(self.mesh_ds.elementMask.values)
+        spread_mask = np.zeros(self.input_mesh_ds.sizes["elementCount"], dtype=int)
 
         if self.spread:
 
-            lon = self.mesh_ds.centerCoords[:, 0].values
-            lat = self.mesh_ds.centerCoords[:, 1].values
+            lon = self.input_mesh_ds.centerCoords[:, 0].values
+            lat = self.input_mesh_ds.centerCoords[:, 1].values
 
             for plat, plon in SPREAD_POINTS:
 
@@ -150,9 +163,10 @@ class Rof_Remapping_Weights:
 
     def spread_weights(self):
         """
-        For each of the spread and nospread target masks, use a ball tree to find nearest ocean cells.
-        For cells in the spread source mask, spread with exponential decay away from the cell
-        For cells ourside this mask, map to the closest ocean cell only.
+        For each of the spread and nospread target masks, use a ball tree to find
+        nearest ocean cells. For cells in the spread source mask, spread with
+        exponential decay away from the cell. For cells ourside this mask, map to
+        the closest ocean cell only.
         """
 
         # Haversine distances expect lat first, lon second, so index coordDim backwards
@@ -177,9 +191,11 @@ class Rof_Remapping_Weights:
             self.target_mask_nospread, other=0, drop=True
         )
 
-        # Using the Trees, look up the nearest ocean cell to every grid cell.
-        # input is all cells
-        in_coords_rad = np.deg2rad(self.mesh_ds.centerCoords.isel(coordDim=[1, 0]))
+        # Using the Trees, look up the nearest ocean cell to every source grid cell.
+        # input is all cells of the input/source mesh
+        in_coords_rad = np.deg2rad(
+            self.input_mesh_ds.centerCoords.isel(coordDim=[1, 0])
+        )
 
         # nearest 1 - no spread
         i_1 = mask_tree_nospread.query(
@@ -196,14 +212,19 @@ class Rof_Remapping_Weights:
                 return_distance=True,
             )
 
-        # From https://earthsystemmodeling.org/docs/release/ESMF_5_2_0rp3/ESMF_refdoc/node3.html :
-        # " The indices and weights generated by ESMF_FieldRegridStore() are stored in the output file as variables col, row
-        # and S. Where col and row are the indices to the source and the destination grid cells. These are a one-dimension
-        # array with length defined by dimension n_s. S is the weight which is multiplied by the source value indicated by
-        # col and then summed with the destination value indicated by row to build the final interpolated value of the destination.
+        # From:
+        # https://earthsystemmodeling.org/docs/release/ESMF_5_2_0rp3/ESMF_refdoc/node3.html
+        # " The indices and weights generated by ESMF_FieldRegridStore() are stored
+        # in the output file as variables col, row and S. Where col and row are the
+        # indices to the source and the destination grid cells. These are a
+        # one-dimension array with length defined by dimension n_s. S is the weight
+        # which is multiplied by the source value indicated by col and then summed
+        # with the destination value indicated by row to build the final
+        # interpolated value of the destination.
 
-        # make 2d array of indices and weights, then fill with spread/no_spread depending on the row
-        n = len(center_coords_rad)
+        # make 2d array of indices and weights, then fill with spread/no_spread
+        # depending on the row
+        n = len(in_coords_rad)
         indices = np.full((n, SPREAD_N), -1, dtype=int)
         weights = np.zeros((n, SPREAD_N), dtype=float)
 
@@ -212,7 +233,7 @@ class Rof_Remapping_Weights:
 
         # Nospread points
         # when using where on integers, set other=0 to avoid converting to floats
-        nospread_i = self.mesh_ds.elementCount.where(
+        nospread_i = self.input_mesh_ds.elementCount.where(
             self.spread_source_mask == False, other=0, drop=True
         )
 
@@ -221,14 +242,15 @@ class Rof_Remapping_Weights:
         # Get the mesh element areas and adjust for area change between the
         # source cell (i) and destination (row)
         area = mesh_area(self.mesh_filename)
+        source_area = mesh_area(self.input_mesh_filename)
 
         indices[nospread_i, 0] = row
-        weights[nospread_i, 0] = area[nospread_i] / area[row]
+        weights[nospread_i, 0] = source_area[nospread_i] / area[row]
 
         # Spread points
         if self.spread:
 
-            spread_i = self.mesh_ds.elementCount.where(
+            spread_i = self.input_mesh_ds.elementCount.where(
                 self.spread_source_mask, other=0, drop=True
             )
 
@@ -242,7 +264,7 @@ class Rof_Remapping_Weights:
             # Exponential weights
             w = np.exp(-dist_N[spread_i] / np.deg2rad(FOLD))
 
-            area_frac = [area / new_area[i] for i, area in enumerate(area[spread_i])]
+            area_frac = [a / new_area[i] for i, a in enumerate(source_area[spread_i])]
 
             for i in range(0, len(w)):
                 w[i] /= np.sum(w[i] / area_frac[i])
@@ -251,7 +273,7 @@ class Rof_Remapping_Weights:
             weights[spread_i] = w
 
         # Flatten sparse structure
-        col = np.repeat(self.mesh_ds.elementCount, SPREAD_N)
+        col = np.repeat(self.input_mesh_ds.elementCount, SPREAD_N)
         row = indices.ravel()
         S = weights.ravel()
 
@@ -280,8 +302,12 @@ class Rof_Remapping_Weights:
         }
 
         # add git info to history
+        input_files = [self.mesh_filename]
+        if self.input_mesh_filename != self.mesh_filename:
+            input_files.append(self.input_mesh_filename)
+
         weights_ds.attrs |= get_provenance_metadata(
-            [self.mesh_filename], output_filename=self.weights_f, licence="CC BY 4.0"
+            input_files, output_filename=self.weights_f, licence="CC BY 4.0"
         )
 
         # save (compressed)
@@ -291,11 +317,15 @@ class Rof_Remapping_Weights:
         weights_ds.to_netcdf(self.weights_f, encoding=encoding)
 
 
-def gen_rof_weights(mesh_filename, weights_filename, nx, ny, spread=True):
+def gen_rof_weights(
+    mesh_filename, weights_filename, nx, ny, spread=True, input_mesh_filename=None
+):
     """
     Conveniance function for doing the whole weights generation
     """
-    rof_weights = Rof_Remapping_Weights(mesh_filename, weights_filename, nx, ny, spread)
+    rof_weights = Rof_Remapping_Weights(
+        mesh_filename, weights_filename, nx, ny, spread, input_mesh_filename
+    )
     rof_weights.target_masks()
     rof_weights.source_mask()
     rof_weights.spread_weights()
@@ -303,14 +333,24 @@ def gen_rof_weights(mesh_filename, weights_filename, nx, ny, spread=True):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Create an remapping weights to transfer runoff from unmasked mesh to masked mesh using ESMF mesh file."
+        description="Create an remapping weights to transfer runoff from unmasked "
+        "mesh to masked mesh using ESMF mesh file."
     )
 
     parser.add_argument(
         "--mesh_filename",
         type=str,
         required=True,
-        help="The path to the mesh file specifying the model grid and land mask.",
+        help="The path to the mesh file specifying the model (destination) grid "
+        "and land mask.",
+    )
+    parser.add_argument(
+        "--input_mesh_filename",
+        type=str,
+        required=False,
+        default=None,
+        help="The path to the mesh file specifying the source (runoff-providing) grid, "
+        "if different to mesh_filename. Defaults to mesh_filename.",
     )
     parser.add_argument(
         "--nx",
@@ -341,7 +381,12 @@ def main():
     args = parser.parse_args()
 
     return gen_rof_weights(
-        args.mesh_filename, args.weights_filename, args.nx, args.ny, args.spread
+        args.mesh_filename,
+        args.weights_filename,
+        args.nx,
+        args.ny,
+        args.spread,
+        args.input_mesh_filename,
     )
 
 
