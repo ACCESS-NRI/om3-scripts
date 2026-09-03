@@ -73,12 +73,11 @@ import subprocess
 import shutil
 import netCDF4 as nc
 import shlex
-from datetime import datetime
 
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
-from scripts_common import get_provenance_metadata, md5sum
+from scripts_common import get_provenance_metadata
 
 MASKTABLE_PATTERN = re.compile(r"masked=(\d+),\s*layout=(\d+),\s*(\d+)")
 
@@ -567,19 +566,17 @@ def add_provenance(
 
 def provenance(args, nx: int, ny: int):
     command = shlex.join([sys.executable, *sys.argv])
-    history = get_provenance_metadata(
+    attrs = get_provenance_metadata(
+        input_files=[args.hgrid, args.topog],
         runcmd=command,
         write_readme_file=False,
-    )["history"]
-    timestamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+    )
+    history = attrs["history"]
+    inputFile = attrs["inputFile"]
     return [
         history,
+        inputFile,
         "",
-        f"Date: {timestamp}",
-        f"hgrid: {args.hgrid}",
-        f"topog: {args.topog}",
-        f"md5sum(hgrid): {md5sum(args.hgrid)}",
-        f"md5sum(topog): {md5sum(args.topog)}",
         f"Grid size: {nx} x {ny}",
         f"periodx: {args.periodx}",
         f"periody: {args.periody if args.periody is not None else 'unset (aperiodic)'}",
