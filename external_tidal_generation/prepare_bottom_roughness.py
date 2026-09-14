@@ -15,14 +15,13 @@
 #
 # After the shared intermediate has been prepared, run `generate_bottom_roughness_regrid.py` separately for each target MOM6 grid.
 #
-# After review, publish the intermediate bottom roughness file and its associated README with provenance info through model-config-tests.
+# After review, publish the intermediate bottom roughness file and its associated README with provenance info through model-config-inputs.
 # =========================================================================================
 import argparse
 import os
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
 
 from netCDF4 import Dataset
 
@@ -81,9 +80,12 @@ def generate(output, inputs, expected):
     with Dataset(output) as dataset:
         generated = dataset.getncattr("inputFile")
     if generated != expected or provenance(inputs) != expected:
-        raise RuntimeError("An input changed during generation; output not updated")
+        raise RuntimeError(
+            "An input changed during generation. The generated intermediate "
+            f"must not be published:\n  {output}"
+        )
 
-    print(f"Updated {output}")
+    print(f"Generated {output}")
 
 
 def main():
@@ -93,14 +95,23 @@ def main():
     parser.add_argument("--woa-temp-file", type=Path, required=True)
     parser.add_argument("--woa-salt-file", type=Path, required=True)
     parser.add_argument("--synbath-file", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
-        "--check",
-        action="store_true",
-        help="Only check the intermediate is current; never create or replace it.",
+        "--output",
+        type=Path,
+        help="Generate a new intermediate at this staging path.",
+    )
+    parser.add_argument(
+        "--existing-intermediate",
+        type=Path,
+        help="Check a previously published (read-only) intermediate and exit 0 if it is current.",
     )
 
     args = parser.parse_args()
+
+    if args.output is None and args.existing_intermediate is None:
+        parser.error("Must specify either --output or --existing-intermediate")
+    if args.output is not None and args.existing_intermediate is not None:
+        parser.error("Cannot specify both --output and --existing-intermediate")
 
     inputs = [
         args.woa_temp_file.expanduser().resolve(),
@@ -108,13 +119,30 @@ def main():
         args.synbath_file.expanduser().resolve(),
     ]
 
-    output = args.output.expanduser().resolve()
     expected = provenance(inputs)
-    if is_current(output, expected):
-        return 0
 
-    if args.check:
+    if args.existing_intermediate is not None:
+        existing = args.existing_intermediate.expanduser().resolve()
+
+        if is_current(existing, expected):
+            print(f"{existing} is current")
+            return 0
+
+        print(
+            "The published (read-only) bottom roughness intermediate is missing or out of date: "
+            f"{existing}",
+            file=sys.stderr,
+        )
         return 1
+
+    output = args.output.expanduser().resolve()
+
+    if output.exists():
+        print(
+            f"Stop overwriting an existing bottom roughness intermediate: {output}",
+            file=sys.stderr,
+        )
+        return 2
 
     generate(output, inputs, expected)
     return 0
