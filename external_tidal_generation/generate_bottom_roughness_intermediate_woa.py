@@ -54,53 +54,14 @@
 #
 # This script takes around 52 minutes to run with 72 cpus on a Sapphire Rapids node.
 # It does not fully utilise the node due to MPI overhead and memory pressure.
-# Since this script only need to run once per woa version,
+# Since this script normally only needs to run when its WOA/SYNBATH inputs change,
 # we prioritise code clarity and maintainability over performance optimisations.
 #
-# Below is an example of a pbs job
-# #!/bin/bash
-# #PBS -P tm70
-# #PBS -l storage=gdata/ik11+gdata/tm70+gdata/vk83+gdata/xp65
-# #PBS -N bottom_roughness_generation
-# #PBS -q normalsr
-# #PBS -l walltime=2:00:00
-# #PBS -l mem=500GB
-# #PBS -l ncpus=72
+# This is an internal implementation script and is not intended to be the normal user entry point.
+# Use `prepare_bottom_roughness.py` to prepare the shared intermediate file. That script checks
+# the input provenance and invokes this MPI calculation only when regeneration is required.
 #
-# set -euo pipefail
-#
-# module purge
-# module use /g/data/xp65/public/modules
-# module load conda/analysis3-25.08
-# module load openmpi/4.1.7
-# module load git
-# cd "$PBS_O_WORKDIR" || exit 1
-#
-# if [[ -s $WOA23_OUTPUT_PATH ]]; then
-#   echo "Found existing intermediate file: ${WOA23_OUTPUT_PATH}"
-#   echo "Hence skipping MPI intermediate generation."
-# else
-#   echo "Generating intermediate WOA-based bottom roughness file: ${WOA23_OUTPUT_PATH}"
-#   mpirun -n $PBS_NCPUS python3 $INTERMEDIATE_SCRIPT \
-#     --woa_temp_file ${WOA23_TEMP_PATH} \
-#     --woa_salt_file ${WOA23_SALT_PATH} \
-#     --synbath_file ${SYNBATH_PATH} \
-#     --woa_intermediate_file ${WOA23_OUTPUT_PATH} \
-#     > log_woa.log 2>&1
-# fi
-#
-# echo "Regridding bottom roughness to MOM6 grid: ${OUTPUT_PATH}"
-# python3 $REGRID_SCRIPT \
-#   --woa_intermediate_file ${WOA23_OUTPUT_PATH} \
-#   --topog_file ${TOPOG_PATH} \
-#   --hgrid_file ${HGRID_PATH} \
-#   --output_file ${OUTPUT_PATH} \
-#   --method conservative_normed \
-#   --periodic_regrid \
-#   --periodic_lon_laplace \
-#   > log_regrid.log 2>&1
-#
-# echo "Bottom roughness generation completed!"
+# Regridding to a target MOM6 grid is a separate step performed with `generate_bottom_roughness_regrid.py`.
 #
 # Notes:
 # - The implementation follows the matlab reference workflow provided by Callum Shakespeare
@@ -119,7 +80,7 @@
 #
 # Modules:
 #   module use /g/data/xp65/public/modules
-#   module load conda/analysis3-25.05
+#   module load conda/analysis3
 #   module load openmpi/4.1.7
 #   module load git
 # =========================================================================================
@@ -689,7 +650,7 @@ def main():
     parser.add_argument(
         "--woa_intermediate_file",
         type=str,
-        default=None,
+        required=True,
         help="Intermediate output file including lambda1, mean_depth, depth_var on WOA grid.",
     )
     args = parser.parse_args()
@@ -838,7 +799,7 @@ def main():
         )
 
         # Add provenance metadata and MD5 hashes for input files.
-        runcmd = f"mpirun -n $PBS_NCPUS python3 {' '.join(sys.argv)} "
+        runcmd = f"mpirun -n {comm.Get_size()} python3 {' '.join(sys.argv)}"
         input_files = [
             args.woa_temp_file,
             args.woa_salt_file,
@@ -847,6 +808,7 @@ def main():
         global_attrs = get_provenance_metadata(
             input_files,
             runcmd,
+            output_dir=str(Path(args.woa_intermediate_file).resolve().parent),
             output_filename=args.woa_intermediate_file,
             licence="Public Domain",
         )

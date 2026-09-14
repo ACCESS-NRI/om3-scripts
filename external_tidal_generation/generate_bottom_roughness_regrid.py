@@ -5,15 +5,23 @@
 # =========================================================================================
 # Bottom roughness regridding for internal-tide generation (h^2)
 #
-# This script regrids a precomputed bottom-roughness field (h^2), generated on the
-# regular WOA lat-lon grid onto a MOM6 model grid using xesmf.
+# This is the user-facing 2nd stage of the bottom roughness generation workflow.
 #
-# It is intended to be run after `generate_bottom_roughness_intermediate_woa.py`,
-# which computes the WOA-based intermediates.
+# First use `prepare_bottom_roughness.py` to generate or validate the shared,
+# resolution-independent WOA/SYNBATH intermediate file. Then run this script
+# separately for each target MOM6 grid.
+#
+# This script regrids a precomputed bottom-roughness field (h^2) from the regular
+# WOA lat-lon grid onto a MOM6 model grid using xESMF.
 #
 # The regridding step is separated into this standalone script to avoid known issues
 # when combining xesmf regridding with MPI-based workflows in the analysis environment.
 # https://github.com/ACCESS-NRI/ACCESS-Analysis-Conda/issues/207
+#
+# Current ACCESS-OM3 usage:
+#   - 100 km grids: conservative_normed
+#   - 25 km and finer grids: bilinear
+#   - global grids should use --periodic_regrid and --periodic_lon_laplace
 #
 # Usage:
 #   python3 generate_bottom_roughness_regrid.py \
@@ -36,7 +44,7 @@
 #
 # Modules:
 #   module use /g/data/xp65/public/modules
-#   module load conda/analysis3-25.05
+#   module load conda/analysis3
 #   module load openmpi/4.1.7
 #   module load git
 # =========================================================================================
@@ -336,8 +344,8 @@ def main():
     parser.add_argument(
         "--woa_intermediate_file",
         type=str,
-        default=None,
-        help="Intermediate output file including lambda1, mean_depth, depth_var on WOA grid.",
+        required=True,
+        help="Intermediate input file including lambda1, mean_depth, depth_var on WOA grid.",
     )
     parser.add_argument(
         "--method",
