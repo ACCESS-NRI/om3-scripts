@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #PBS -P tm70
-#PBS -l storage=gdata/ik11+gdata/tm70+gdata/vk83+gdata/xp65
+#PBS -l storage=gdata/av17+gdata/tm70+gdata/vk83+gdata/xp65
 #PBS -N bottom_roughness_generation
 #PBS -q normalsr
 #PBS -l walltime=10:00:00
