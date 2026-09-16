@@ -72,11 +72,11 @@ REGRID_SCRIPT="/g/data/vk83/apps/om3-scripts/external_tidal_generation/generate_
 
 # Input paths - shared across resolutions
 # Loads woa23 0.25deg annual mean climatology
-WOA23_TEMP_PATH="/g/data/ik11/inputs/WOA23/woa23_decav_t00_04.nc"
-WOA23_SALT_PATH="/g/data/ik11/inputs/WOA23/woa23_decav_s00_04.nc"
+WOA23_TEMP_PATH="/g/data/av17/access-nri/OM3/woa23/annual_files/corrected_times/woa23_decav_t00_04.nc"
+WOA23_SALT_PATH="/g/data/av17/access-nri/OM3/woa23/annual_files/corrected_times/woa23_decav_s00_04.nc"
 
 # Loads SYNBATH global bathymetry
-SYNBATH_PATH="/g/data/ik11/inputs/SYNBATH/SYNBATH.nc"
+SYNBATH_PATH="/g/data/av17/access-nri/OM3/SYNBATH/SYNBATH_V2.0.nc"
 
 # Regridding method selection
 # 100km -> conservative_normed, otherwise bilinear
