@@ -23,8 +23,16 @@ def get_git_url(file):
     try:
         url = (
             subprocess.check_output(
-                ["git", "-c", "safe.directory=*", "-C", dirname,
-                 "config", "--get", "remote.origin.url"]
+                [
+                    "git",
+                    "-c",
+                    "safe.directory=*",
+                    "-C",
+                    dirname,
+                    "config",
+                    "--get",
+                    "remote.origin.url",
+                ]
             )
             .decode("ascii")
             .strip()
@@ -38,8 +46,15 @@ def get_git_url(file):
 
     top_level_dir = (
         subprocess.check_output(
-            ["git", "-c", "safe.directory=*", "-C", dirname,
-             "rev-parse", "--show-toplevel"]
+            [
+                "git",
+                "-c",
+                "safe.directory=*",
+                "-C",
+                dirname,
+                "rev-parse",
+                "--show-toplevel",
+            ]
         )
         .decode("ascii")
         .strip()
