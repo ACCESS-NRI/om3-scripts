@@ -42,17 +42,15 @@ from scripts_common import get_provenance_metadata
 
 
 def smooth2d(src):
-    tmp_src = np.ndarray((src.shape[0] + 6, src.shape[1]))
+    # One halo row on each side is sufficient for the 3 x 3 stencil.
+    tmp_src = np.empty((src.shape[0] + 2, src.shape[1]), dtype=float)
+    tmp_src[1:-1, :] = src
+    tmp_src[0, :] = src[0, :]  # Replicate the closed southern boundary.
+    # Scalar cells straddle the northern fold: (ny, i) -> (ny - 1, nx - 1 - i).
+    tmp_src[-1, :] = src[-1, ::-1]
 
-    # Window size
-    ws = 3
-
-    tmp_src[ws:-ws, :] = src[:, :]
-    tmp_src[:ws, :] = src[-ws:, :]
-    tmp_src[-ws:, :] = src[:3, :]
-
-    dest = uniform_filter(tmp_src, size=ws, mode="nearest")
-    return dest[ws:-ws, :]
+    dest = uniform_filter(tmp_src, size=3, mode=("nearest", "wrap"))
+    return dest[1:-1, :]
 
 
 def main(input_path, variable_to_smooth, output_file):
