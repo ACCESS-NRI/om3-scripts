@@ -20,6 +20,23 @@ def get_git_url(file):
     """
     dirname = os.path.dirname(file)
 
+    # Do this first: unlike `git config --get`, which just exits 1, it reports
+    # why git refuses a repository owned by another user.
+    try:
+        top_level_dir = (
+            subprocess.check_output(
+                ["git", "-C", dirname, "rev-parse", "--show-toplevel"],
+                stderr=subprocess.PIPE,
+            )
+            .decode("ascii")
+            .strip()
+        )
+    except subprocess.CalledProcessError as e:
+        stderr = e.stderr.decode("ascii", errors="replace").strip()
+        if "detected dubious ownership" in stderr:
+            raise RuntimeError(f"Cannot record provenance for {file}:\n{stderr}") from e
+        return None
+
     try:
         url = (
             subprocess.check_output(
@@ -35,11 +52,6 @@ def get_git_url(file):
     if url.startswith("git@github.com:"):
         url = f"https://github.com/{url.removeprefix('git@github.com:')}"
 
-    top_level_dir = (
-        subprocess.check_output(["git", "-C", dirname, "rev-parse", "--show-toplevel"])
-        .decode("ascii")
-        .strip()
-    )
     rel_path = file.removeprefix(top_level_dir)
 
     hash = (
