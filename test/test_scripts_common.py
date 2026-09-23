@@ -11,7 +11,7 @@ import pytest
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
-from scripts_common import username, get_email, write_readme, md5sum
+from scripts_common import get_git_url, username, get_email, write_readme, md5sum
 
 
 @pytest.fixture(autouse=True)
@@ -219,3 +219,75 @@ def test_write_readme_multiple_input_files_hashed(tmp_path, script_file, monkeyp
     content = readme_path.read_text()
     assert f"- {input_a} (md5 hash: {md5sum(str(input_a))})" in content
     assert f"- {input_b} (md5 hash: {md5sum(str(input_b))})" in content
+
+
+# ----------------------------------------------------------------------------
+# get_git_url()
+# ----------------------------------------------------------------------------
+
+
+def test_get_git_url(tmp_path, script_file):
+    _init_repo(tmp_path, name="Git Name", email="someone@example.com")
+    subprocess.run(
+        ["git", "remote", "add", "origin", "git@github.com:ACCESS-NRI/om3-scripts.git"],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "initial"], cwd=tmp_path, check=True)
+    head = (
+        subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=tmp_path)
+        .decode("ascii")
+        .strip()
+    )
+
+    url = get_git_url(str(script_file))
+
+    assert url.startswith(f"https://github.com/ACCESS-NRI/om3-scripts/blob/{head}")
+    assert url.endswith(script_file.name)
+
+
+def _git_failure(stderr):
+    """Return a check_output replacement that fails with the given stderr."""
+
+    def fake_check_output(cmd, *args, **kwargs):
+        raise subprocess.CalledProcessError(128, cmd, output=b"", stderr=stderr)
+
+    return fake_check_output
+
+
+def test_get_git_url_raises_on_dubious_ownership(tmp_path, script_file, monkeypatch):
+    """
+    A repository git refuses because it is owned by another user must raise
+    rather than silently fall back to path + md5 provenance.
+    """
+    monkeypatch.setattr(
+        subprocess,
+        "check_output",
+        _git_failure(
+            f"fatal: detected dubious ownership in repository at '{tmp_path}'\n"
+            f"To add an exception for this directory, call:\n"
+            f"\n"
+            f"\tgit config --global --add safe.directory {tmp_path}\n".encode("ascii")
+        ),
+    )
+
+    with pytest.raises(RuntimeError) as excinfo:
+        get_git_url(str(script_file))
+
+    message = str(excinfo.value)
+    assert "detected dubious ownership" in message
+    assert f"git config --global --add safe.directory {tmp_path}" in message
+
+
+def test_get_git_url_returns_none_without_git(script_file, monkeypatch):
+    """Unrelated git failures still fall back to None."""
+    monkeypatch.setattr(
+        subprocess,
+        "check_output",
+        _git_failure(
+            b"fatal: not a git repository (or any of the parent directories)\n"
+        ),
+    )
+
+    assert get_git_url(str(script_file)) is None

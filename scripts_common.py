@@ -20,19 +20,27 @@ def get_git_url(file):
     """
     dirname = os.path.dirname(file)
 
+    # Do this first: unlike `git config --get`, which just exits 1, it reports
+    # why git refuses a repository owned by another user.
+    try:
+        top_level_dir = (
+            subprocess.check_output(
+                ["git", "-C", dirname, "rev-parse", "--show-toplevel"],
+                stderr=subprocess.PIPE,
+            )
+            .decode("ascii")
+            .strip()
+        )
+    except subprocess.CalledProcessError as e:
+        stderr = e.stderr.decode("ascii", errors="replace").strip()
+        if "detected dubious ownership" in stderr:
+            raise RuntimeError(f"Cannot record provenance for {file}:\n{stderr}") from e
+        return None
+
     try:
         url = (
             subprocess.check_output(
-                [
-                    "git",
-                    "-c",
-                    "safe.directory=*",
-                    "-C",
-                    dirname,
-                    "config",
-                    "--get",
-                    "remote.origin.url",
-                ]
+                ["git", "-C", dirname, "config", "--get", "remote.origin.url"]
             )
             .decode("ascii")
             .strip()
@@ -44,27 +52,10 @@ def get_git_url(file):
     if url.startswith("git@github.com:"):
         url = f"https://github.com/{url.removeprefix('git@github.com:')}"
 
-    top_level_dir = (
-        subprocess.check_output(
-            [
-                "git",
-                "-c",
-                "safe.directory=*",
-                "-C",
-                dirname,
-                "rev-parse",
-                "--show-toplevel",
-            ]
-        )
-        .decode("ascii")
-        .strip()
-    )
     rel_path = file.removeprefix(top_level_dir)
 
     hash = (
-        subprocess.check_output(
-            ["git", "-c", "safe.directory=*", "-C", dirname, "rev-parse", "HEAD"]
-        )
+        subprocess.check_output(["git", "-C", dirname, "rev-parse", "HEAD"])
         .decode("ascii")
         .strip()
     )
@@ -82,9 +73,7 @@ def git_status(file):
     """
     dirname = os.path.dirname(file)
     status = (
-        subprocess.check_output(
-            ["git", "-c", "safe.directory=*", "-C", dirname, "status", file]
-        )
+        subprocess.check_output(["git", "-C", dirname, "status", file])
         .decode("ascii")
         .strip()
     )
@@ -109,9 +98,7 @@ def username(file):
 
     try:
         gitname = (
-            subprocess.check_output(
-                ["git", "-c", "safe.directory=*", "-C", dirname, "config", "user.name"]
-            )
+            subprocess.check_output(["git", "-C", dirname, "config", "user.name"])
             .decode("ascii")
             .strip()
         )
@@ -131,9 +118,7 @@ def get_email(file):
 
     try:
         return (
-            subprocess.check_output(
-                ["git", "-c", "safe.directory=*", "-C", dirname, "config", "user.email"]
-            )
+            subprocess.check_output(["git", "-C", dirname, "config", "user.email"])
             .decode("ascii")
             .strip()
         )
