@@ -12,7 +12,7 @@
 # This script consolidates the stream files into a single uncompressed tar:
 # archive/output000/traceout/
 #   metadata
-#   esmf_streams.tar
+#   esmf_stream.tar
 # The metadata file remains outside the tar
 # The loose stream files are removed only after the tar has been successfully created.
 
