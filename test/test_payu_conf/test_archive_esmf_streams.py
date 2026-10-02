@@ -6,7 +6,6 @@ from payu_config.archive_scripts.archive_esmf_streams import (
     archive_traceout,
 )
 
-
 METADATA = "metadata"
 
 

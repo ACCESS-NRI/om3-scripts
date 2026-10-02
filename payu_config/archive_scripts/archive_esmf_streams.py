@@ -32,12 +32,16 @@ def _stream_files(traceout_path: Path) -> list[Path]:
     Return a list of stream files in traceout_path
     """
     stream_files = [
-        f for f in traceout_path.iterdir()
-        if f.is_file() and STREAM_RE.fullmatch(f.name)]
+        f
+        for f in traceout_path.iterdir()
+        if f.is_file() and STREAM_RE.fullmatch(f.name)
+    ]
     return sorted(stream_files)
 
 
-def _remove_streams_already_archived(archive_path: Path, stream_files: list[Path]) -> int:
+def _remove_streams_already_archived(
+    archive_path: Path, stream_files: list[Path]
+) -> int:
     """
     Remove loose stream files left behind after an interrupted cleanup. The final tar is only
     created after it has been completely written so if it exists along with loose stream files,
@@ -58,7 +62,7 @@ def _remove_streams_already_archived(archive_path: Path, stream_files: list[Path
 
     for f in stream_files:
         f.unlink()
-    
+
     return len(stream_files)
 
 
@@ -82,7 +86,7 @@ def archive_traceout(traceout_path: Path) -> int:
     # A previous call may have completed the tar but been interrupted while removing the loose stream files
     if archive_path.exists():
         return _remove_streams_already_archived(archive_path, stream_files)
-    
+
     # write beside the final archive so the rename stays on the same filesystem
     with tempfile.NamedTemporaryFile(
         dir=traceout_path,
@@ -125,7 +129,7 @@ def archive_output(output_path: Path) -> int:
     traceout_path = output_path / "traceout"
     if not traceout_path.is_dir():
         return 0
-    
+
     return archive_traceout(traceout_path)
 
 
@@ -146,12 +150,14 @@ def main(argv: list[str] | None = None) -> None:
         output_dirs = [Path(args.output_dir).expanduser().resolve()]
     else:
         output_dirs = sorted(Path("archive").glob("output*"))
-    
+
     for output_dir in output_dirs:
         count = archive_output(output_dir)
 
         if count:
-            print(f"Archived {count} stream files in {output_dir}/traceout/{ARCHIVE_FILENAME}")
+            print(
+                f"Archived {count} stream files in {output_dir}/traceout/{ARCHIVE_FILENAME}"
+            )
 
 
 if __name__ == "__main__":
