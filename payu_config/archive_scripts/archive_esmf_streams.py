@@ -100,7 +100,11 @@ def archive_traceout(traceout_path: Path) -> int:
                     arcname=f.name,
                     recursive=False,
                 )
-        
+        # NamedTemporaryFile creates files as 0600 default.
+        # https://github.com/python/cpython/blob/a4f28a52b4b54c34100ee0891b9a15640ed3a7b2/Lib/tempfile.py#L244-L257
+        # Change to 0640 so the archive is readable by group members
+        tmp_path.chmod(0o640)
+
         # only expose the final archive after it has been completely written
         tmp_path.replace(archive_path)
     except Exception:
