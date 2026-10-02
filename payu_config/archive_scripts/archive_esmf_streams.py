@@ -142,7 +142,7 @@ def main(argv: list[str] | None = None) -> None:
         "--directory",
         metavar="DIRECTORY",
         dest="output_dir",
-        help="Process one or more output directories, if omitted, process all archive/output*/ directories",
+        help="Process one output directory, if omitted, process all archive/output*/ directories",
     )
     args = parser.parse_args(argv)
 
