@@ -5,6 +5,7 @@ channels:
   - defaults
 dependencies:
   - esmpy
+  - xesmf
   - python>3.10
   - pip
   - pip:
