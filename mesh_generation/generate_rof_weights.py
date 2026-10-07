@@ -356,13 +356,13 @@ def main():
         "--nx",
         type=int,
         required=True,
-        help="Number of global cells in x directon",
+        help="Number of global ocean cells in x directon",
     )
     parser.add_argument(
         "--ny",
         type=int,
         required=True,
-        help="Number of global cells in y directon",
+        help="Number of global ocean cells in y directon",
     )
     parser.add_argument(
         "--weights_filename",
