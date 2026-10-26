@@ -46,6 +46,9 @@ from scripts_common import get_provenance_metadata
 # these lat, lon pairs represent where high volumes on runoff enter the ocean
 # they represent where maximum flow in JRA55do > 0.15 kg/m^2/s, plus rivers whose mouths are
 # land in the 8km mask and would otherwise be moved to a single ocean cell
+# An optional third value is a bearing (degrees clockwise from north). If set, runoff is only
+# spread into ocean cells within 45 degrees of that bearing from the point. Use it when
+# the nearest ocean cells include a different basin.
 SPREAD_POINTS = [
     (-0.125, 310.625),  # Amazon
     (8.625, 299.375),  # Tigre
@@ -53,9 +56,9 @@ SPREAD_POINTS = [
     (71.875, 82.875),  # Yenisey
     (72.125, 128.875),  # Lena
     (73.375, 106.625),  # Khatanga
-    (66.375, 70.625),  # Ob
+    (66.375, 70.625, 45),  # Ob, spread NE (Gulf of Ob, not west of Yamal)
     (68.125, 54.125),  # Pechora
-    (67.125, 264.625),  # Back (Chantrey Inlet)
+    (67.125, 264.625, 0),  # Back (Chantrey Inlet), spread N (not Hudson Bay)
 ]
 
 # Buffer (degrees) around spread_points to spread from
@@ -64,12 +67,32 @@ SRC_DIST = 1
 # Number of cells to spread to
 SPREAD_N = 75
 
-# Decay length (deg) when calculating spreading weights
+# Half width (radians) of the cone of allowed spreading targets, for SPREAD_POINTS with a bearing
+BEARING_HALF_WIDTH = np.deg2rad(45)
+
+# Decay length (radians) when calculating spreading weights
 # spreading should decrease by a factor of e (2.718) every FOLD distance
-FOLD = 2
+FOLD = np.deg2rad(2)
 
 # netcdf compression settings to use
 COMP_ENCODING = {"complevel": 1, "compression": "zlib"}
+
+
+def initial_bearing(lat1, lon1, lat2, lon2):
+    """
+    Initial great-circle bearing from point 1 to point(s) 2, clockwise from north.
+    All arguments and the result are in radians.
+    """
+    dlon = lon2 - lon1
+    y = np.sin(dlon) * np.cos(lat2)
+    x = np.cos(lat1) * np.sin(lat2) - np.sin(lat1) * np.cos(lat2) * np.cos(dlon)
+    return np.arctan2(y, x) % (2 * np.pi)
+
+
+def angle_diff(a, b):
+    """Smallest absolute difference between two angles (radians)"""
+    d = np.abs(a - b) % (2 * np.pi)
+    return np.minimum(d, 2 * np.pi - d)
 
 
 def mesh_area(mesh_filename):
@@ -138,24 +161,28 @@ class Rof_Remapping_Weights:
         create mask of cells within a small range of points to be spread
         these are cells which should be spread
         """
-        spread_mask = np.zeros(self.input_mesh_ds.sizes["elementCount"], dtype=int)
+        # for each cell in the input mesh, find the nearest point in SPREAD_POINTS (if any)
+        # and mark it (with the index in SPREAD_POINTS) for spreading
+        # if source regions overlap, the later point in SPREAD_POINTS takes precedence
+        self.spread_source = np.full(
+            self.input_mesh_ds.sizes["elementCount"], -1, dtype=int
+        )
 
         if self.spread:
 
             lon = self.input_mesh_ds.centerCoords[:, 0].values
             lat = self.input_mesh_ds.centerCoords[:, 1].values
 
-            for plat, plon in SPREAD_POINTS:
+            for ipoint, (plat, plon, *_) in enumerate(SPREAD_POINTS):
 
                 # Handle longitude wraparound correctly
                 dlon = ((lon - plon + 180) % 360) - 180
-                dlat = lat - plat
 
                 point_mask = (abs(lat - plat) <= SRC_DIST) & (abs(dlon) <= SRC_DIST)
 
-                spread_mask |= point_mask
+                self.spread_source[point_mask] = ipoint
 
-        self.spread_source_mask = xr.DataArray(spread_mask == 1, dims="elementCount")
+        self.spread_source_da = xr.DataArray(self.spread_source, dims="elementCount")
 
     def spread_weights(self):
         """
@@ -167,17 +194,7 @@ class Rof_Remapping_Weights:
         # Haversine distances expect lat first, lon second, so index coordDim backwards
         center_coords_rad = np.deg2rad(self.mesh_ds.centerCoords.isel(coordDim=[1, 0]))
 
-        # Make BallTrees from the target cells
-        if self.spread:
-
-            mask_tree_spread = BallTree(
-                center_coords_rad.where(self.target_mask_spread, drop=True),
-                metric="haversine",
-            )
-            target_mask_spread_i = self.mesh_ds.elementCount.where(
-                self.target_mask_spread, other=0, drop=True
-            )  # Index for the target_mask (other=0 preserves integer dtype)
-
+        # Make a BallTree from the target cells for no spread
         mask_tree_nospread = BallTree(
             center_coords_rad.where(self.target_mask_nospread, drop=True),
             metric="haversine",
@@ -199,14 +216,6 @@ class Rof_Remapping_Weights:
             return_distance=False,
         )
 
-        if self.spread:
-            # nearest N - spread
-            dist_N, i_N = mask_tree_spread.query(
-                in_coords_rad,
-                k=SPREAD_N,
-                return_distance=True,
-            )
-
         # From https://earthsystemmodeling.org/docs/release/ESMF_5_2_0rp3/ESMF_refdoc/node3.html :
         # " The indices and weights generated by ESMF_FieldRegridStore() are stored in the output file as variables col, row
         # and S. Where col and row are the indices to the source and the destination grid cells. These are a one-dimension
@@ -218,13 +227,12 @@ class Rof_Remapping_Weights:
         indices = np.full((n, SPREAD_N), -1, dtype=int)
         weights = np.zeros((n, SPREAD_N), dtype=float)
 
-        # we made i_1 and i_N for all source cells,
-        # select spread_i for spreading and no_spread_i for no spreading
+        # we made i_1 for all source cells, use it for cells which are not spread
 
         # Nospread points
         # when using where on integers, set other=0 to avoid converting to floats
         nospread_i = self.input_mesh_ds.elementCount.where(
-            self.spread_source_mask == False, other=0, drop=True
+            self.spread_source_da < 0, other=0, drop=True
         )
 
         row = target_mask_nospread_i[i_1[nospread_i, 0]]
@@ -237,30 +245,59 @@ class Rof_Remapping_Weights:
         indices[nospread_i, 0] = row
         weights[nospread_i, 0] = source_area[nospread_i] / area[row]
 
-        # Spread points
+        # Spread points: for each point in SPREAD_POINTS, find the SPREAD_N nearest
+        # target cells to each of its source cells and spread with exponential decay
         if self.spread:
 
-            spread_i = self.input_mesh_ds.elementCount.where(
-                self.spread_source_mask, other=0, drop=True
-            )
+            target_i = self.mesh_ds.elementCount.where(
+                self.target_mask_spread, other=0, drop=True
+            ).values  # Index for the target_mask (other=0 preserves integer dtype)
+            target_coords_rad = center_coords_rad.where(
+                self.target_mask_spread, drop=True
+            ).values
 
-            row = np.zeros((len(spread_i), SPREAD_N), dtype=int)
+            # Ball tree targeting all ocean, can be usef for points without a bearing
+            ocean_tree = BallTree(target_coords_rad, metric="haversine")
 
-            for i in range(0, SPREAD_N):
-                row[:, i] = target_mask_spread_i[i_N[spread_i, i]]
+            for ipoint in np.unique(self.spread_source[self.spread_source >= 0]):
+                plat, plon, *bearing = SPREAD_POINTS[ipoint]
+                # Get the indices of the source cells which are to be spread from this point
+                point_spread_i = np.where(self.spread_source == ipoint)[0]
 
-            new_area = area[row]
+                if bearing:
+                    # only target cells within BEARING_HALF_WIDTH of the bearing
+                    allowed = np.where(
+                        angle_diff(
+                            initial_bearing(
+                                np.deg2rad(plat),
+                                np.deg2rad(plon),
+                                target_coords_rad[:, 0],
+                                target_coords_rad[:, 1],
+                            ),
+                            np.deg2rad(bearing[0]),
+                        )
+                        <= BEARING_HALF_WIDTH
+                    )[0]
+                    tree = BallTree(target_coords_rad[allowed], metric="haversine")
+                else:
+                    allowed = np.arange(len(target_i))
+                    tree = ocean_tree
 
-            # Exponential weights
-            w = np.exp(-dist_N[spread_i] / np.deg2rad(FOLD))
+                dist, i_n = tree.query(
+                    in_coords_rad.values[point_spread_i],
+                    k=SPREAD_N,
+                    return_distance=True,
+                )
+                row = target_i[allowed[i_n]]
 
-            area_frac = [a / new_area[i] for i, a in enumerate(source_area[spread_i])]
+                # Exponential weights, normalised for the area change between the
+                # source cell and each destination so volume is conserved
+                w = np.exp(-dist / FOLD)
+                area_frac = source_area[point_spread_i, None] / area[row]
+                w /= np.sum(w / area_frac, axis=1, keepdims=True)
 
-            for i in range(0, len(w)):
-                w[i] /= np.sum(w[i] / area_frac[i])
-
-            indices[spread_i] = row
-            weights[spread_i] = w
+                indices[point_spread_i] = row
+                weights[point_spread_i] = w
 
         # Flatten sparse structure
         col = np.repeat(self.input_mesh_ds.elementCount, SPREAD_N)
