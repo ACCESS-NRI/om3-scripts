@@ -15,7 +15,16 @@ from scipy.ndimage import binary_dilation
 from copy import copy
 
 from mesh_generation.generate_mesh import MomSuperGrid
-from mesh_generation.generate_rof_weights import gen_rof_weights, Rof_Remapping_Weights
+import mesh_generation.generate_rof_weights as rof_weights_module
+from mesh_generation.generate_rof_weights import (
+    gen_rof_weights,
+    Rof_Remapping_Weights,
+    SPREAD_POINTS,
+    SRC_DIST,
+    BEARING_HALF_WIDTH,
+    initial_bearing,
+    angle_diff,
+)
 from mesh_generation.generate_um_mesh import create_um_mesh
 
 # create test grids at 4 degrees
@@ -429,7 +438,7 @@ def test_source_masks_no_spread(mesh_out, mom_grid, weights_path):
     test_weights.source_mask()
 
     np.testing.assert_array_equal(
-        test_weights.spread_source_mask.astype(np.int8),
+        (test_weights.spread_source_da >= 0).astype(np.int8),
         np.zeros(mom_grid.nx * mom_grid.ny),
     )
 
@@ -446,4 +455,129 @@ def test_source_masks_spread(mesh_out, mom_grid, weights_path):
     test_weights.source_mask()
 
     # to-do, whats a better tests here? Compare against SPREAD_POINTS again?
-    assert np.sum(test_weights.spread_source_mask.astype(np.int8)) > 0
+    assert np.sum((test_weights.spread_source_da >= 0).astype(np.int8)) > 0
+
+
+def test_bearing_helpers():
+    """
+    Confirm bearings and angle differences for simple cases
+    """
+    r = np.deg2rad
+    # due north, east, south and west
+    assert initial_bearing(0, 0, r(10), 0) == pytest.approx(0)
+    assert initial_bearing(0, 0, 0, r(10)) == pytest.approx(r(90))
+    assert initial_bearing(0, 0, r(-10), 0) == pytest.approx(r(180))
+    assert initial_bearing(0, 0, 0, r(-10)) == pytest.approx(r(270))
+    # longitude wraparound
+    assert initial_bearing(r(60), r(359), r(60), r(1)) == pytest.approx(
+        initial_bearing(r(60), r(-1), r(60), r(1))
+    )
+
+    assert angle_diff(r(350), r(10)) == pytest.approx(r(20))
+    assert angle_diff(r(10), r(350)) == pytest.approx(r(20))
+    assert angle_diff(0, r(180)) == pytest.approx(r(180))
+
+
+@pytest.mark.parametrize("weights_file", [True], indirect=True)
+def test_spread_bearing(weights_file, mesh_in, mesh_out):
+    """
+    Confirm runoff from SPREAD_POINTS with a bearing only goes to cells within
+    BEARING_HALF_WIDTH of that bearing
+    """
+    ds = xr.open_dataset(weights_file["path"])
+    col = ds["col"].values - 1
+    row = ds["row"].values - 1
+
+    # source cells (col) are on the input mesh, targets (row) on the ocean mesh
+    src_coords = xr.open_dataset(
+        mesh_in["input_mesh_filename"] or mesh_out["path"]
+    ).centerCoords.values
+    src_lon, src_lat = src_coords[:, 0], src_coords[:, 1]
+    coords = mesh_out["mom_super_grid"].mesh.centerCoords.values
+    lon, lat = coords[:, 0], coords[:, 1]
+
+    for plat, plon, *bearing in SPREAD_POINTS:
+        if not bearing:
+            continue
+
+        dlon = ((src_lon - plon + 180) % 360) - 180
+        src = np.where((abs(src_lat - plat) <= SRC_DIST) & (abs(dlon) <= SRC_DIST))[0]
+        targets = row[np.isin(col, src)]
+
+        # at coarse test resolutions there may be no source cells near the point
+        if len(targets) == 0:
+            continue
+
+        assert np.all(
+            angle_diff(
+                initial_bearing(
+                    np.deg2rad(plat),
+                    np.deg2rad(plon),
+                    np.deg2rad(lat[targets]),
+                    np.deg2rad(lon[targets]),
+                ),
+                np.deg2rad(bearing[0]),
+            )
+            <= BEARING_HALF_WIDTH
+        )
+
+
+@pytest.mark.parametrize("bearing", [0, 90])
+def test_bearing_restricts_targets(
+    mesh_in, mesh_out, mom_grid, mod_tmp_path, monkeypatch, bearing
+):
+    """
+    Confirm adding a bearing changes the spreading targets: for a synthetic point in the
+    open Pacific, spreading without a bearing reaches cells outside the cone, and
+    with the bearing it doesn't
+    """
+    plat, plon = 0.0, 180.0
+    # wide enough that there are source cells near the point at all test resolutions
+    src_dist = 5
+    monkeypatch.setattr(rof_weights_module, "SRC_DIST", src_dist)
+
+    src_coords = xr.open_dataset(
+        mesh_in["input_mesh_filename"] or mesh_out["path"]
+    ).centerCoords.values
+    dlon = ((src_coords[:, 0] - plon + 180) % 360) - 180
+    src = np.where(
+        (abs(src_coords[:, 1] - plat) <= src_dist) & (abs(dlon) <= src_dist)
+    )[0]
+    assert len(src) > 0
+
+    coords = mesh_out["mom_super_grid"].mesh.centerCoords.values
+    lon, lat = coords[:, 0], coords[:, 1]
+
+    n_outside = {}
+    for name, point in [("with", (plat, plon, bearing)), ("without", (plat, plon))]:
+        monkeypatch.setattr(rof_weights_module, "SPREAD_POINTS", [point])
+        weights_path = mod_tmp_path / f"bearing_{mesh_in['name']}_{bearing}_{name}.nc"
+        gen_rof_weights(
+            mesh_out["path"],
+            str(weights_path),
+            mom_grid.nx,
+            mom_grid.ny,
+            spread=True,
+            input_mesh_filename=mesh_in["input_mesh_filename"],
+        )
+        ds = xr.open_dataset(weights_path)
+        targets = ds["row"].values[np.isin(ds["col"].values - 1, src)] - 1
+        ds.close()
+        weights_path.unlink()
+
+        assert len(targets) > 0
+        n_outside[name] = np.sum(
+            angle_diff(
+                initial_bearing(
+                    np.deg2rad(plat),
+                    np.deg2rad(plon),
+                    np.deg2rad(lat[targets]),
+                    np.deg2rad(lon[targets]),
+                ),
+                np.deg2rad(bearing),
+            )
+            > BEARING_HALF_WIDTH
+        )
+
+    assert n_outside["with"] == 0
+    assert n_outside["without"] > 0
