@@ -6,7 +6,7 @@
 #PBS -l mem=500GB
 #PBS -l jobfs=100GB
 #PBS -q normalsr
-#PBS -l walltime=00:30:00
+#PBS -l walltime=01:00:00
 #PBS -l wd
 #PBS -j oe
 #PBS -W umask=027

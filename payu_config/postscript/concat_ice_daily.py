@@ -187,6 +187,17 @@ class Concat_Ice_Daily:
 
                 # if monthly file already exists, don't process again
                 if not filename.exists():
+                    # use the existing x,y chunks and let netCDF choose the time
+                    # chunk (0). netCDF-C only fills in a 0 chunk size when it is
+                    # the first dimension, so this needs time to be first. Other
+                    # encoding (compression, fill values) is kept from the daily
+                    # files. xarray drops chunksizes if the shape differs from
+                    # original_shape, so remove that.
+                    for var in ds.data_vars:
+                        if ds[var].ndim >= 3 and ds[var].dims[0] == "time":
+                            enc = ds[var].encoding
+                            enc["chunksizes"] = (0,) + ds[var].data.chunksize[1:]
+                            enc.pop("original_shape", None)
                     monthly_ncs.append(ds.to_netcdf(filename, compute=False))
 
         if len(self.month_f) == 0:
