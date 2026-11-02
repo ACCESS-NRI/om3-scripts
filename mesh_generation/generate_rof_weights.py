@@ -64,15 +64,19 @@ SPREAD_POINTS = [
 # Buffer (degrees) around spread_points to spread from
 SRC_DIST = 1
 
-# Number of cells to spread to
-SPREAD_N = 75
-
 # Half width (radians) of the cone of allowed spreading targets, for SPREAD_POINTS with a bearing
 BEARING_HALF_WIDTH = np.deg2rad(45)
 
-# Decay length (radians) when calculating spreading weights
+# Decay length (km) when calculating spreading weights
 # spreading should decrease by a factor of e (2.718) every FOLD distance
-FOLD = np.deg2rad(2)
+FOLD = 80
+
+# Runoff is spread to ocean cells up to SPREAD_CUTOFF * FOLD further away than the nearest
+# ocean cell, so the spreading radius is the same at all resolutions
+SPREAD_CUTOFF = 3
+
+# Radius (km) to convert distances to radians for the haversine metric
+EARTH_RADIUS = 6371
 
 # netcdf compression settings to use
 COMP_ENCODING = {"complevel": 1, "compression": "zlib"}
@@ -222,31 +226,26 @@ class Rof_Remapping_Weights:
         # array with length defined by dimension n_s. S is the weight which is multiplied by the source value indicated by
         # col and then summed with the destination value indicated by row to build the final interpolated value of the destination.
 
-        # make 2d array of indices and weights, then fill with spread/no_spread depending on the row
-        n = len(in_coords_rad)
-        indices = np.full((n, SPREAD_N), -1, dtype=int)
-        weights = np.zeros((n, SPREAD_N), dtype=float)
-
-        # we made i_1 for all source cells, use it for cells which are not spread
-
         # Nospread points
         # when using where on integers, set other=0 to avoid converting to floats
         nospread_i = self.input_mesh_ds.elementCount.where(
             self.spread_source_da < 0, other=0, drop=True
-        )
+        ).values
 
-        row = target_mask_nospread_i[i_1[nospread_i, 0]]
+        row = target_mask_nospread_i.values[i_1[nospread_i, 0]]
 
         # Get the mesh element areas and adjust for area change between the
         # source cell (i) and destination (row)
         area = mesh_area(self.mesh_filename)
         source_area = mesh_area(self.input_mesh_filename)
 
-        indices[nospread_i, 0] = row
-        weights[nospread_i, 0] = source_area[nospread_i] / area[row]
+        # Collect (row, col, S) for each group of source cells, to concatenate at the end
+        rows = [row]
+        cols = [nospread_i]
+        weights = [source_area[nospread_i] / area[row]]
 
-        # Spread points: for each point in SPREAD_POINTS, find the SPREAD_N nearest
-        # target cells to each of its source cells and spread with exponential decay
+        # Spread points: for each point in SPREAD_POINTS, spread each of its source cells to
+        # all target cells within SPREAD_CUTOFF * FOLD of the nearest target, with exponential decay
         if self.spread:
 
             target_i = self.mesh_ds.elementCount.where(
@@ -258,6 +257,9 @@ class Rof_Remapping_Weights:
 
             # Ball tree targeting all ocean, can be usef for points without a bearing
             ocean_tree = BallTree(target_coords_rad, metric="haversine")
+
+            fold = FOLD / EARTH_RADIUS
+            cutoff = SPREAD_CUTOFF * fold
 
             for ipoint in np.unique(self.spread_source[self.spread_source >= 0]):
                 plat, plon, *bearing = SPREAD_POINTS[ipoint]
@@ -283,26 +285,34 @@ class Rof_Remapping_Weights:
                     allowed = np.arange(len(target_i))
                     tree = ocean_tree
 
-                dist, i_n = tree.query(
-                    in_coords_rad.values[point_spread_i],
-                    k=SPREAD_N,
-                    return_distance=True,
+                src_coords = in_coords_rad.values[point_spread_i]
+
+                # distance to the nearest target, then all targets within cutoff of that
+                dist_min = tree.query(src_coords, k=1, return_distance=True)[0][:, 0]
+                i_n, dist = tree.query_radius(
+                    src_coords, r=dist_min + cutoff, return_distance=True
                 )
-                row = target_i[allowed[i_n]]
+
+                # flatten the ragged results, keeping track of the source cell for each target
+                n_targets = [len(i) for i in i_n]
+                src = np.repeat(np.arange(len(point_spread_i)), n_targets)
+                row = target_i[allowed[np.concatenate(i_n)]]
+                col = point_spread_i[src]
 
                 # Exponential weights, normalised for the area change between the
                 # source cell and each destination so volume is conserved
-                w = np.exp(-dist / FOLD)
-                area_frac = source_area[point_spread_i, None] / area[row]
-                w /= np.sum(w / area_frac, axis=1, keepdims=True)
+                w = np.exp(-(np.concatenate(dist) - dist_min[src]) / fold)
+                w_volume = w * area[row] / source_area[col]
+                w /= np.bincount(src, weights=w_volume)[src]
 
-                indices[point_spread_i] = row
-                weights[point_spread_i] = w
+                rows.append(row)
+                cols.append(col)
+                weights.append(w)
 
         # Flatten sparse structure
-        col = np.repeat(self.input_mesh_ds.elementCount, SPREAD_N)
-        row = indices.ravel()
-        S = weights.ravel()
+        row = np.concatenate(rows)
+        col = np.concatenate(cols)
+        S = np.concatenate(weights)
 
         self.create_weights_file(row, col, S)
 
@@ -311,17 +321,18 @@ class Rof_Remapping_Weights:
         For provided data (row, col, S) save it to a newtcdf weights file
         """
 
-        # Convert to ESMF 1-based indexing
-        row += 1
-        col += 1
-
-        weights_ds = xr.Dataset()
-        weights_ds["col"] = xr.DataArray(data=col, dims="n_s")
-        weights_ds["row"] = xr.DataArray(data=row, dims="n_s")
-        weights_ds["S"] = xr.DataArray(data=S, dims="n_s")
-
         # Remove zero weights
-        weights_ds = weights_ds.where(weights_ds["S"] != 0, other=0, drop=True)
+        nonzero = S != 0
+
+        # Convert to ESMF 1-based indexing
+        weights_ds = xr.Dataset()
+        weights_ds["col"] = xr.DataArray(
+            data=(col[nonzero] + 1).astype(np.int32), dims="n_s"
+        )
+        weights_ds["row"] = xr.DataArray(
+            data=(row[nonzero] + 1).astype(np.int32), dims="n_s"
+        )
+        weights_ds["S"] = xr.DataArray(data=S[nonzero], dims="n_s")
 
         # add global attributes
         weights_ds.attrs = {

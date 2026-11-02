@@ -22,6 +22,9 @@ from mesh_generation.generate_rof_weights import (
     SPREAD_POINTS,
     SRC_DIST,
     BEARING_HALF_WIDTH,
+    EARTH_RADIUS,
+    FOLD,
+    SPREAD_CUTOFF,
     initial_bearing,
     angle_diff,
 )
@@ -520,6 +523,46 @@ def test_spread_bearing(weights_file, mesh_in, mesh_out):
             )
             <= BEARING_HALF_WIDTH
         )
+
+
+@pytest.mark.parametrize("weights_file", [True], indirect=True)
+def test_spread_cutoff(weights_file, mesh_in, mesh_out):
+    """
+    Confirm spread runoff only goes to cells within SPREAD_CUTOFF * FOLD of the
+    nearest target, and that some runoff is spread to more than one cell
+    """
+    ds = xr.open_dataset(weights_file["path"])
+    col = ds["col"].values - 1
+    row = ds["row"].values - 1
+
+    src_coords = np.deg2rad(
+        xr.open_dataset(
+            mesh_in["input_mesh_filename"] or mesh_out["path"]
+        ).centerCoords.values
+    )
+    coords = np.deg2rad(mesh_out["mom_super_grid"].mesh.centerCoords.values)
+
+    # haversine distance (km) from each source cell to each of its targets
+    lon1, lat1 = src_coords[col, 0], src_coords[col, 1]
+    lon2, lat2 = coords[row, 0], coords[row, 1]
+    dist = (
+        2
+        * EARTH_RADIUS
+        * np.arcsin(
+            np.sqrt(
+                np.sin((lat2 - lat1) / 2) ** 2
+                + np.cos(lat1) * np.cos(lat2) * np.sin((lon2 - lon1) / 2) ** 2
+            )
+        )
+    )
+
+    n_targets = np.bincount(col)
+    spread_cols = np.where(n_targets > 1)[0]
+    assert len(spread_cols) > 0
+
+    for c in spread_cols:
+        d = dist[col == c]
+        assert d.max() - d.min() <= SPREAD_CUTOFF * FOLD * (1 + 1e-6)
 
 
 @pytest.mark.parametrize("bearing", [0, 90])
