@@ -4,5 +4,5 @@
 
 set -euo pipefail
 
-python3 $(dirname "$0")/archive_scripts/standardise_mom_filenames.py
+python3 "$(dirname "$0")/archive_scripts/standardise_mom_filenames.py" -d "$PAYU_CURRENT_OUTPUT_DIR"
 python3 $(dirname "$0")/archive_scripts/archive_esmf_streams.py
