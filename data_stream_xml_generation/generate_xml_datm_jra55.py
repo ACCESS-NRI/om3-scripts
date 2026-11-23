@@ -5,13 +5,15 @@
 # Generate a datm xml file that contains a time-series of input atmosphere data files where all the fields in the stream are located.
 
 # To run:
-#   python generate_xml_datm_jra55.py <year_first> <year_last>
+#   python generate_xml_datm_jra55.py <year_first> <year_last> [--flux-mapalgo <mapalgo>]
 # To generate IAF xml file, set year_first and year_last to the forcing period
 # To generate RYF xml file, set year_first==year_last
+# --flux-mapalgo sets the spatial remapping of the flux streams (default: consf)
 
 
 # Contact: Ezhilsabareesh Kannadasan <ezhilsabareesh.kannadasan@anu.edu.au>
 
+import argparse
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom import minidom
 import sys
@@ -22,6 +24,9 @@ path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
 from scripts_common import get_provenance_metadata
+
+# CDEPS mapalgo options for the flux streams
+FLUX_MAPALGO_CHOICES = ["consf", "patch", "bilinear"]
 
 # in jra55do, these fields (fluxes) have timestamps in the middle of the average interval
 STREAMS_AVE = [
@@ -43,17 +48,26 @@ STREAMS_PT = [
 source_data = "jra55v1p6"
 # source_data = "jra55v1p4"
 
-if len(sys.argv) != 3:
-    print("Usage: python generate_xml_datm.py year_first year_last")
-    sys.exit(1)
-
-try:
-    year_first = int(sys.argv[1])
-    year_last = int(sys.argv[2])
-
-except ValueError:
-    print("Year values must be integers")
-    sys.exit(1)
+parser = argparse.ArgumentParser(
+    description="Generate DATM stream XML for JRA55-do forcing."
+)
+parser.add_argument("year_first", type=int)
+parser.add_argument("year_last", type=int)
+parser.add_argument(
+    "--flux-mapalgo",
+    choices=FLUX_MAPALGO_CHOICES,
+    default="consf",
+    help=(
+        "Spatial remapping for the flux streams. consf (conservative) is "
+        "appropriate for global configurations. For regional configurations "
+        "with open boundaries, where conservative fluxes are less important, "
+        "patch or bilinear can avoid imprinting the blocky structure of the "
+        "source grid. Non-flux streams always use patch."
+    ),
+)
+args = parser.parse_args()
+year_first = args.year_first
+year_last = args.year_last
 
 year_align = year_first
 
@@ -103,7 +117,7 @@ for stream_name in stream_info_names:
 
     SubElement(stream_info, "readmode").text = "single"
     if stream_name in STREAMS_AVE:
-        SubElement(stream_info, "mapalgo").text = "consf"
+        SubElement(stream_info, "mapalgo").text = args.flux_mapalgo
     else:
         SubElement(stream_info, "mapalgo").text = "patch"
 

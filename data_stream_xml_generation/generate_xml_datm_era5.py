@@ -5,7 +5,7 @@
 # Generate a datm xml file that contains a time-series of input atmosphere data files where all the fields in the stream are located.
 
 # To run:
-#   python generate_xml_datm_era5.py <year_first> <year_last> --input-root <era5_root>
+#   python generate_xml_datm_era5.py <year_first> <year_last> --input-base <era5_root> [--flux-mapalgo <mapalgo>]
 # To generate IAF xml file, set year_first and year_last to the forcing period
 # To generate RYF xml file, set year_first==year_last
 
@@ -31,41 +31,46 @@ from scripts_common import get_provenance_metadata
 # For linear time interpolation, hourly interval fields are therefore shifted by -1800 s so the
 # timestamp is at the midpoint of the represented hour. Instantaneous fields keep offset=0.
 #
-# stream_name, era5_prefix, [(source_var, cime_var), ...], mapalgo, offset_seconds
+# stream_name, era5_prefix, [(source_var, cime_var), ...], is_flux, offset_seconds
+#
+# Flux streams are remapped with --flux-mapalgo (default consf), other streams with patch.
 #
 # CDEPS derives ERA5 shortwave bands from ssrd; omit albedo-like aluv/alni streams.
 STREAM_SPECS = [
-    ("ERA5.RAINC", "cp", [("cp", "Faxa_rainc")], "consf", -1800),
-    ("ERA5.RAINL", "lsp", [("lsp", "Faxa_rainl")], "consf", -1800),
-    ("ERA5.SNOWC", "csf", [("csf", "Faxa_snowc")], "consf", -1800),
-    ("ERA5.SNOWL", "lsf", [("lsf", "Faxa_snowl")], "consf", -1800),
-    ("ERA5.LWDN", "strd", [("strd", "Faxa_lwdn")], "consf", -1800),
-    ("ERA5.SWDN", "ssrd", [("ssrd", "Faxa_swdn")], "consf", -1800),
-    ("ERA5.SWNET", "ssr", [("ssr", "Faxa_swnet")], "consf", -1800),
+    ("ERA5.RAINC", "cp", [("cp", "Faxa_rainc")], True, -1800),
+    ("ERA5.RAINL", "lsp", [("lsp", "Faxa_rainl")], True, -1800),
+    ("ERA5.SNOWC", "csf", [("csf", "Faxa_snowc")], True, -1800),
+    ("ERA5.SNOWL", "lsf", [("lsf", "Faxa_snowl")], True, -1800),
+    ("ERA5.LWDN", "strd", [("strd", "Faxa_lwdn")], True, -1800),
+    ("ERA5.SWDN", "ssrd", [("ssrd", "Faxa_swdn")], True, -1800),
+    ("ERA5.SWNET", "ssr", [("ssr", "Faxa_swnet")], True, -1800),
     (
         "ERA5.SLP_10",
         "msl",
         [("msl", "Sa_pslv"), ("msl", "Sa_pbot")],
-        "patch",
+        False,
         0,
     ),
     (
         "ERA5.T_10",
         "2t",
         [("t2m", "Sa_t2m"), ("t2m", "Sa_tbot")],
-        "patch",
+        False,
         0,
     ),
     (
         "ERA5.TDEW",
         "2d",
         [("d2m", "Sa_tdew")],
-        "patch",
+        False,
         0,
     ),
-    ("ERA5.U_10", "10u", [("u10", "Sa_u"), ("u10", "Sa_u10m")], "patch", 0),
-    ("ERA5.V_10", "10v", [("v10", "Sa_v"), ("v10", "Sa_v10m")], "patch", 0),
+    ("ERA5.U_10", "10u", [("u10", "Sa_u"), ("u10", "Sa_u10m")], False, 0),
+    ("ERA5.V_10", "10v", [("v10", "Sa_v"), ("v10", "Sa_v10m")], False, 0),
 ]
+
+# CDEPS mapalgo options for the flux streams
+FLUX_MAPALGO_CHOICES = ["consf", "patch", "bilinear"]
 
 
 def parse_args():
@@ -82,6 +87,18 @@ def parse_args():
             "Base directory containing ERA5 data in subdirectories. This is used "
             "only to discover filenames; XML datafile paths are still written "
             "relative to ./INPUT for payu staging."
+        ),
+    )
+    parser.add_argument(
+        "--flux-mapalgo",
+        choices=FLUX_MAPALGO_CHOICES,
+        default="consf",
+        help=(
+            "Spatial remapping for the flux streams. consf (conservative) is "
+            "appropriate for global configurations. For regional configurations "
+            "with open boundaries, where conservative fluxes are less important, "
+            "patch or bilinear can avoid imprinting the blocky structure of the "
+            "source grid. Non-flux streams always use patch."
         ),
     )
     return parser.parse_args()
@@ -123,14 +140,14 @@ SubElement(metadata, "date_generated").text = datetime.now().strftime(
 SubElement(metadata, "history").text = metadata_info["history"]
 
 # Generate stream info elements with changing years
-for stream_name, era5_prefix, datavar_pairs, mapalgo, offset_seconds in STREAM_SPECS:
+for stream_name, era5_prefix, datavar_pairs, is_flux, offset_seconds in STREAM_SPECS:
     stream_info = SubElement(root, "stream_info", name=stream_name)
     if year_first == year_last:
         SubElement(stream_info, "taxmode").text = "cycle"
     else:
         SubElement(stream_info, "taxmode").text = "extend"
     SubElement(stream_info, "readmode").text = "single"
-    SubElement(stream_info, "mapalgo").text = mapalgo
+    SubElement(stream_info, "mapalgo").text = args.flux_mapalgo if is_flux else "patch"
     SubElement(stream_info, "dtlimit").text = "1.e30"
     SubElement(stream_info, "year_first").text = str(year_first)
     SubElement(stream_info, "year_last").text = str(year_last)
