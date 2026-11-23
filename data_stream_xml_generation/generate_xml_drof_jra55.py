@@ -5,12 +5,14 @@
 # Generate a drof xml file that contains a time-series of runoff data files where all the fields in the stream are located.
 
 # To run:
-#   python generate_xml_datm.py <year_first> <year_last>
+#   python generate_xml_drof_jra55.py <year_first> <year_last> [--streams <stream> ...]
 # To generate IAF xml file, set year_first and year_last to the forcing period
 # To generate RYF xml file, set year_first==year_last
+# --streams selects which runoff streams to include (default: friver licalvf)
 
 # Contact: Ezhilsabareesh Kannadasan <ezhilsabareesh.kannadasan@anu.edu.au>
 
+import argparse
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom import minidom
 import sys
@@ -25,16 +27,28 @@ from scripts_common import get_provenance_metadata
 source_data = "jra55v1p6"
 # source_data = "jra55v1p4"
 
-if len(sys.argv) != 3:
-    print("Usage: python generate_xml_drof.py year_first year_last")
-    sys.exit(1)
+# Stream info names and corresponding var names
+STREAM_INFO_DATA = [
+    ("JRA55do.FRIVER", "friver", "Forr_rofl"),
+    ("JRA55do.LICALVF", "licalvf", "Forr_rofi"),
+]
+STREAM_CHOICES = [var_prefix for _, var_prefix, _ in STREAM_INFO_DATA]
 
-try:
-    year_first = int(sys.argv[1])
-    year_last = int(sys.argv[2])
-except ValueError:
-    print("Year values must be integers")
-    sys.exit(1)
+parser = argparse.ArgumentParser(
+    description="Generate DROF stream XML for JRA55-do runoff."
+)
+parser.add_argument("year_first", type=int)
+parser.add_argument("year_last", type=int)
+parser.add_argument(
+    "--streams",
+    nargs="+",
+    choices=STREAM_CHOICES,
+    default=STREAM_CHOICES,
+    help="Runoff streams to include (default: all).",
+)
+args = parser.parse_args()
+year_first = args.year_first
+year_last = args.year_last
 
 year_align = year_first
 
@@ -52,11 +66,8 @@ SubElement(metadata, "date_generated").text = datetime.now().strftime(
 )
 SubElement(metadata, "history").text = metadata_info["history"]
 
-# Define the stream info names and corresponding var names
-stream_info_data = [
-    ("JRA55do.FRIVER", "friver", "Forr_rofl"),
-    ("JRA55do.LICALVF", "licalvf", "Forr_rofi"),
-]
+# Select the requested streams
+stream_info_data = [stream for stream in STREAM_INFO_DATA if stream[1] in args.streams]
 
 # Generate stream info elements with changing years
 for stream_name, var_prefix, var_suffix in stream_info_data:
