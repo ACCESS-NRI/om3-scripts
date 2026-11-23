@@ -133,7 +133,17 @@ def compute_tideamp(data_path: Path) -> xr.DataArray:
 
     # rms over all 8 constituents
     da = np.sqrt(speed_sq_sum).rename("tideamp")
-    ds = da.to_dataset()
+
+    # TPXO land (and any other invalid points) are NaN. Add a source mask to the
+    # Dataset so that xesmf excludes these points from the regridding rather than
+    # propagating NaNs into every target cell that touches them.
+    mask = da.notnull()
+    ds = xr.Dataset(
+        {
+            "tideamp": da.where(mask, 0.0),
+            "mask": mask.astype("int32"),
+        }
+    )
 
     # boundary grids for xesmf interpolation
     lon_ub = grid.lon_u.rename({"nx": "x"})
@@ -188,13 +198,54 @@ def regrid(
         },
     )
 
-    regridder = xe.Regridder(tideamp, target_ds, method=method, periodic=True)
+    regridder = xe.Regridder(
+        tideamp, target_ds, method=method, periodic=True, unmapped_to_nan=True
+    )
 
     target_ds["tideamp"] = regridder(tideamp["tideamp"])
+
+    # Fill ocean cells with no TPXO overlap using nearest neighbour. This is done
+    # as a second step because ESMF does not support extrapolation with conservative
+    # methods
+    target_ds["tideamp"] = fill_nearest(
+        tideamp, target_ds["tideamp"], target_ds["mask"]
+    )
 
     target_ds["tideamp"] = target_ds["tideamp"].fillna(0.0)
 
     return target_ds
+
+
+def fill_nearest(
+    source: xr.Dataset, da: xr.DataArray, mask: xr.DataArray
+) -> xr.DataArray:
+    """
+    Fill NaNs in ocean cells (mask == 1) of the regridded field with the value of
+    the nearest valid (unmasked) source point, using ESMF nearest_s2d regridding.
+    """
+    missing = (mask.values == 1) & ~np.isfinite(da.values)
+
+    n_missing = int(missing.sum())
+    if n_missing == 0:
+        return da
+
+    print(
+        f"Filling {n_missing} model ocean cells with no valid TPXO overlap by nearest neighbour"
+    )
+
+    points = xr.Dataset(
+        coords={
+            "lon": (("y", "x"), da["lon"].values[missing][:, np.newaxis]),
+            "lat": (("y", "x"), da["lat"].values[missing][:, np.newaxis]),
+        }
+    )
+    regridder = xe.Regridder(source, points, method="nearest_s2d")
+    filled = regridder(source["tideamp"])
+
+    values = da.values.copy()
+    values[missing] = filled.values[:, 0]
+
+    return da.copy(data=values)
 
 
 def update_tideamp(tideamp: xr.DataArray) -> xr.DataArray:
